@@ -1,0 +1,12 @@
+*.ckpt
+*.wandb
+*.pt
+*.log
+*.wandb
+DiffusionModels/wandb/
+DiffusionModels/wandb/*
+.vscode/
+lightning_logs/
+samples*/
+*reconstructions*/
+wandb/
