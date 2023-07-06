@@ -125,8 +125,8 @@ class LatentDiffusionTrainer(pl.LightningModule):
         quant_normal_sampled_latents, _, _ = self.vqgan.quantize(normal_sampled_latents)
         quant_ema_sampled_latents, _, _ = self.vqgan.quantize(ema_sampled_latents)
 
-        normal_sampled_images = self.vqgan.decode(quant_normal_sampled_latents, emb=i_embs)
-        ema_samples_images = self.vqgan.decode(quant_ema_sampled_latents, emb=i_embs)
+        normal_sampled_images = self.vqgan.decode(quant_normal_sampled_latents, emb=i_embs, clamp=True)
+        ema_samples_images = self.vqgan.decode(quant_ema_sampled_latents, emb=i_embs, clamp=True)
 
         self.save_sampled_images(normal_sampled_images, captions, batch_idx, "normal")
         self.save_sampled_images(ema_samples_images, captions, batch_idx, "ema")

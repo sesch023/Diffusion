@@ -93,19 +93,20 @@ class VQModel(pl.LightningModule):
         quant, emb_loss, info = self.quantize(h)
         return quant, emb_loss, info
 
-    def decode(self, quant, emb=None):
+    def decode(self, quant, emb=None, clamp=False):
         quant = self.post_quant_conv(quant)
         dec = self.decoder(quant, emb=emb)
+        dec = dec.clamp(-1, 1) if clamp else dec
         return dec
 
-    def decode_code(self, code_b, emb=None):
+    def decode_code(self, code_b, emb=None, clamp=False):
         quant_b = self.quantize.embed_code(code_b)
-        dec = self.decode(quant_b, emb=emb)
+        dec = self.decode(quant_b, emb=emb, clamp=clamp)
         return dec
 
-    def forward(self, x, emb=None):
+    def forward(self, x, emb=None, clamp=False):
         quant, diff, _ = self.encode(x, emb=emb)
-        dec = self.decode(quant, emb=emb)
+        dec = self.decode(quant, emb=emb, clamp=clamp)
         return dec, diff
 
     def get_input(self, batch, k):
@@ -209,6 +210,7 @@ class VQModel(pl.LightningModule):
             shutil.rmtree(path_folder)
         os.makedirs(path_folder)
         
+        reconstructions = reconstructions.clamp(-1, 1)
         reconstructions = self.transformable_data_module.reverse_transform_images(reconstructions.detach().cpu())
             
         for image_id in range(len(reconstructions)):

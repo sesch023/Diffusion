@@ -3,6 +3,7 @@ import math
 import torch
 import torch.nn as nn
 import numpy as np
+from einops import rearrange
 
 
 def zero_module(module):
@@ -13,6 +14,164 @@ def zero_module(module):
     for p in module.parameters():
         p.detach().zero_()
     return module
+
+
+class AdaptivePseudo3DConv(nn.Module):
+    # https://github.com/lucidrains/make-a-video-pytorch/blob/main/make_a_video_pytorch/make_a_video.py
+    def __init__(
+        self, 
+        in_channels, 
+        out_channels, 
+        kernel_size, 
+        temp_kernel_size=3, 
+        stride=1, 
+        padding=1, 
+        bias=True,
+        is_temporal=True,
+        base_conv2d_for_weight_init=None
+    ):
+        super().__init__()
+        self._conv2d = nn.Conv2d(in_channels, out_channels, kernel_size, stride, padding, bias=bias)
+        self._is_temporal = is_temporal
+        if is_temporal:
+            self._conv1d = nn.Conv1d(out_channels, out_channels, temp_kernel_size, stride, padding, bias=bias)
+            nn.init.dirac_(self._conv1d.weight)
+            nn.init.zeros_(self._conv1d.bias)
+
+        if base_conv2d_for_weight_init is not None:
+            self.seed_with_conv2d(base_conv2d_for_weight_init)
+  
+    def seed_with_conv2d(self, base_conv2d):
+        self._conv2d.weight.copy_(base_conv2d.weight)
+        self._conv2d.bias.copy_(base_conv2d.bias)
+
+
+    def forward(self, x, temporal=True):
+        b, c, *_, h, w = x.shape
+        is_vid_data = x.ndim == 5
+        temporal = temporal and is_vid_data
+        if is_vid_data:
+            x = rearrange(x, 'b c t h w -> (b t) c h w')
+        x = self._conv2d(x)
+        if is_vid_data:
+            x = rearrange(x, '(b t) c h w -> b c t h w', b=b)
+
+        if not temporal or not self._is_temporal:
+            return x
+
+        x = rearrange(x, 'b c t h w -> (b h w) c t')
+        x = self._conv1d(x)
+        x = rearrange(x, '(b h w) c t -> b c t h w', h=h, w=w)
+        return x
+
+
+class ConvolutionMode(Enum):
+    ONE_D="ONE_D",
+    TWO_D="TWO_D",
+    THREE_D="THREE_D",
+    PSEUDO_3D="PSEUDO_3D"
+
+
+def get_convolution_module(convolution_mode, *args, **kwargs):
+    if convolution_mode == ConvolutionMode.ONE_D:
+        return nn.Conv1d(*args, **kwargs)
+    elif convolution_mode == ConvolutionMode.TWO_D:
+        return nn.Conv2d(*args, **kwargs)
+    elif convolution_mode == ConvolutionMode.THREE_D:
+        return nn.Conv3d(*args, **kwargs)
+    elif convolution_mode == ConvolutionMode.PSEUDO_3D:
+        return AdaptivePseudo3DConv(*args, **kwargs)
+    else:
+        raise ValueError(f"Unknown convolution mode {convolution_mode}")
+
+
+class AdaptiveSpatioTemporalSelfAttention(nn.Module):
+    # Inspired by: https://github.com/lucidrains/make-a-video-pytorch/blob/main/make_a_video_pytorch/make_a_video.py#L275
+    def __init__(self, 
+        channels,
+        mha_heads=4,
+        mha_head_channels=None,
+        torch_mha=True,
+        is_temporal=True,
+        base_spatial_attention_for_weight_init=None
+    ):
+        super().__init__()
+        self.channels = channels
+        self.torch_mha = torch_mha
+        self.scale = 1/math.sqrt(2)
+        self.is_temporal = is_temporal
+        
+        if mha_head_channels is None:
+            self.mha_heads = mha_heads
+        else:
+            self.mha_heads = channels // mha_head_channels
+        
+        self.norm_in = nn.GroupNorm(32, channels)
+        self.norm_out_spat = nn.GroupNorm(32, channels)
+        self.norm_out_temp = nn.GroupNorm(32, channels)
+        if self.torch_mha:
+            self.spatial_att =  nn.MultiheadAttention(channels, self.mha_heads, batch_first=True)
+            if is_temporal:
+                self.temp_att =  nn.MultiheadAttention(channels, self.mha_heads, batch_first=True)
+        else:     
+            self.qkv = nn.Conv1d(self.channels, self.channels*3, 1)
+            self.spatial_att = QKVAttention(self.mha_heads)
+            if is_temporal:
+                self.temp_att = QKVAttention(self.mha_heads)
+            self.proj_out = zero_module(nn.Conv1d(self.channels, self.channels, 1))
+
+        if base_spatial_attention_for_weight_init is not None:
+            self.seed_with_spatial_attention(base_spatial_attention_for_weight_init)
+
+
+    def seed_with_spatial_attention(self, base_spatial_attention):
+        self.spatial_att.weight.copy_(base_spatial_attention.weight)
+        self.spatial_att.bias.copy_(base_spatial_attention.bias)
+
+
+    def forward(self, x, temporal=True):
+        b, c, *_, h, w = x.shape
+        is_vid_data = x.ndim == 5
+        temporal = temporal and is_vid_data
+
+        if is_vid_data:
+            x = rearrange(x, 'b c t h w -> (b t) (h w) c')
+        else:
+            x = rearrange(x, 'b c h w -> b (h w) c')
+
+        x = self.norm_in(x)
+        if self.torch_mha:
+            h, _ = self.spatial_att(x, x, x)
+        else:
+            h = h.swapaxes(-2, -1)
+            qkv = self.qkv(x)
+            h = self.att(qkv)
+            h = self.proj_out(h)
+            h = h.swapaxes(-1, -2)
+        x = self.norm_out_spat(self.scale*x + h)
+
+        if is_vid_data:
+            x = rearrange(x, '(b t) (h w) c -> b c t h w', b = b, h = h, w = w)
+        else:
+            x = rearrange(x, 'b (h w) c -> b c h w', h = h, w = w)
+
+        if not temporal or not self._is_temporal:
+            return x
+
+        x = rearrange(x, 'b c t h w -> (b h w) t c')
+
+        if self.torch_mha:
+            h, _ = self.temp_att(x, x, x)
+        else:
+            h = h.swapaxes(-2, -1)
+            qkv = self.qkv(x)
+            h = self.att(qkv)
+            h = self.proj_out(h)
+            h = h.swapaxes(-1, -2)
+
+        x = self.norm_out_temp(self.scale*x + h)
+        x = rearrange(x, '(b h w) t c -> b c t h w', h = h, w = w)
+        return x
 
 
 class MultiParamSequential(nn.Sequential):
@@ -39,9 +198,12 @@ class Upsample2X(nn.Module):
         self._sample = nn.Upsample(scale_factor=2, mode="nearest")
 
     def forward(self, x):
+        b = x.shape[0]
+        x = rearrange(x, 'b c t h w -> (b t) c h w') if x.ndim == 5 else x
         if self._use_conv:
             x = self._conv(x)
-        return self._sample(x)
+        x = self._sample(x)
+        return rearrange(x, '(b t) c h w -> b c t h w', b=b) if x.ndim == 5 else x
 
 class Downsample2X(nn.Module):
     def __init__(self, in_channels, out_channels = None, use_conv=False):
@@ -55,8 +217,10 @@ class Downsample2X(nn.Module):
             self._sample = nn.AvgPool2d(2, stride=2)
 
     def forward(self, x):
-        return self._sample(x)
-
+        b = x.shape[0]
+        x = rearrange(x, 'b c t h w -> (b t) c h w') if x.ndim == 5 else x
+        x = self._sample(x)
+        return rearrange(x, '(b t) c h w -> b c t h w', b=b) if x.ndim == 5 else x
 
 class ResBlock(nn.Module):
     def __init__(self,
@@ -69,7 +233,6 @@ class ResBlock(nn.Module):
         use_scale_shift_norm=True,
         use_conv=True
     ):
-
         super().__init__()
         self._emb_size = emb_size
         self._use_scale_shift_norm  = use_scale_shift_norm 
@@ -169,7 +332,7 @@ class SelfAttention(nn.Module):
         channels,
         mha_heads=4,
         mha_head_channels=None,
-        torch_mha=False):
+        torch_mha=True):
 
         super().__init__()
         self.channels = channels
@@ -181,26 +344,28 @@ class SelfAttention(nn.Module):
         else:
             self.mha_heads = channels // mha_head_channels
         
-        self.norm = nn.GroupNorm(32, channels)
+        self.norm_in = nn.GroupNorm(32, channels)
+        self.norm_out = nn.GroupNorm(32, channels)
         if self.torch_mha:
             self.att =  nn.MultiheadAttention(channels, self.mha_heads, batch_first=True)
         else:     
             self.qkv = nn.Conv1d(self.channels, self.channels*3, 1)
             self.att = QKVAttention(self.mha_heads)
-        self.proj_out = zero_module(nn.Conv1d(self.channels, self.channels, 1))
+            self.proj_out = zero_module(nn.Conv1d(self.channels, self.channels, 1))
 
     def forward(self, x):
         b, c, *spatial = x.shape
         x = x.reshape(b, c, -1)
+        x = self.norm_in(x)
         if self.torch_mha:
-            x_n = self.norm(x).swapaxes(1, 2)
+            x_n = x.swapaxes(1, 2)
             h, _ = self.att(x_n, x_n, x_n)
             h = h.swapaxes(2, 1)
         else:
-            qkv = self.qkv(self.norm(x))
+            qkv = self.qkv(x)
             h = self.att(qkv)
             h = self.proj_out(h)
-        x = nn.functional.group_norm(self.scale*x + h, 32)
+        x = self.norm_out(self.scale*x + h)
         return x.reshape(b, c, *spatial)
 
     
@@ -213,7 +378,8 @@ class SelfAttentionResBlock(ResBlock):
         emb_size=1024, 
         dropout=0.1, 
         skip_con=True,
-        use_scale_shift_norm=True):
+        use_scale_shift_norm=True
+    ):
 
         super().__init__(in_channels, out_channels, ResBlockSampleMode.IDENTITY, emb_size, dropout, skip_con, use_scale_shift_norm)
         self.self_at = SelfAttention(out_channels, mha_heads, mha_head_channels)
@@ -283,4 +449,3 @@ class VLBDiffusionLoss():
             torch.where(x > 0.999, log_one_minus_cdf_min, torch.log(cdf_delta.clamp(min=1e-12))),
         )
         return log_probs
-        
