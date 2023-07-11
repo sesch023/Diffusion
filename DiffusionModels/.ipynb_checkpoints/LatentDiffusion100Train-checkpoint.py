@@ -129,12 +129,12 @@ unet = UNet(
 
 clip_tools = ClipTools(device=device)
 translator_model_path = "clip_translator/model.ckpt"
-sample_images_out_base_path="samples_laten_diffusion/"
+sample_images_out_base_path="samples_latent_100/"
 model = LatentDiffusionTrainer(
     unet, 
     vqgan=vqgan,
     transformable_data_module=data,
-    diffusion_tools=DiffusionTools(device=device, in_size=unet_in_size, steps=100, noise_scheduler=LinearScheduler(), clamp_x_start_in_sample=False), 
+    diffusion_tools=DiffusionTools(device=device, in_size=unet_in_size, steps=1000, noise_scheduler=LinearScheduler(), clamp_x_start_in_sample=False), 
     captions_preprocess=captions_preprocess,
     sample_images_out_base_path=sample_images_out_base_path,
     checkpoint_every_val_epochs=1,

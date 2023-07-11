@@ -65,24 +65,33 @@ class AdaptivePseudo3DConv(nn.Module):
         return x
 
 
-class ConvolutionMode(Enum):
-    ONE_D="ONE_D",
-    TWO_D="TWO_D",
-    THREE_D="THREE_D",
-    PSEUDO_3D="PSEUDO_3D"
+class QKVAttention(nn.Module):
+    """
+    A module which performs QKV attention and splits in a different order.
+    https://github.com/epfml/text_to_image_generation/blob/main/guided_diffusion/unet.py#L361
+    """
+    def __init__(self, n_heads):
+        super().__init__()
+        self.n_heads = n_heads
 
+    def forward(self, qkv):
+        """
+        Apply QKV attention.
 
-def get_convolution_module(convolution_mode, *args, **kwargs):
-    if convolution_mode == ConvolutionMode.ONE_D:
-        return nn.Conv1d(*args, **kwargs)
-    elif convolution_mode == ConvolutionMode.TWO_D:
-        return nn.Conv2d(*args, **kwargs)
-    elif convolution_mode == ConvolutionMode.THREE_D:
-        return nn.Conv3d(*args, **kwargs)
-    elif convolution_mode == ConvolutionMode.PSEUDO_3D:
-        return AdaptivePseudo3DConv(*args, **kwargs)
-    else:
-        raise ValueError(f"Unknown convolution mode {convolution_mode}")
+        :param qkv: an [N x (H * 3 * C) x T] tensor of Qs, Ks, and Vs.
+        :return: an [N x (H * C) x T] tensor after attention.
+        """
+        bs, width, length = qkv.shape
+        assert width % (3 * self.n_heads) == 0
+        ch = width // (3 * self.n_heads)
+        q, k, v = qkv.reshape(bs * self.n_heads, ch * 3, length).split(ch, dim=1)
+        scale = 1 / math.sqrt(math.sqrt(ch))
+        weight = torch.einsum(
+            "bct,bcs->bts", q * scale, k * scale
+        )  # More stable with f16 than dividing afterwards
+        weight = torch.softmax(weight.float(), dim=-1).type(weight.dtype)
+        a = torch.einsum("bts,bcs->bct", weight, v)
+        return a.reshape(bs, -1, length)
 
 
 class AdaptiveSpatioTemporalSelfAttention(nn.Module):
@@ -205,6 +214,7 @@ class Upsample2X(nn.Module):
         x = self._sample(x)
         return rearrange(x, '(b t) c h w -> b c t h w', b=b) if x.ndim == 5 else x
 
+
 class Downsample2X(nn.Module):
     def __init__(self, in_channels, out_channels = None, use_conv=False):
         super().__init__()
@@ -222,108 +232,7 @@ class Downsample2X(nn.Module):
         x = self._sample(x)
         return rearrange(x, '(b t) c h w -> b c t h w', b=b) if x.ndim == 5 else x
 
-class ResBlock(nn.Module):
-    def __init__(self,
-        in_channels,
-        out_channels,
-        sample_mode=ResBlockSampleMode.IDENTITY,
-        emb_size=1024, 
-        dropout=0.1,
-        skip_con=True,
-        use_scale_shift_norm=True,
-        use_conv=True
-    ):
-        super().__init__()
-        self._emb_size = emb_size
-        self._use_scale_shift_norm  = use_scale_shift_norm 
-        if self._emb_size is not None:
-            self._emb_seq = nn.Sequential(
-                nn.SiLU(),
-                nn.Linear(emb_size, 2 * out_channels if use_scale_shift_norm else out_channels)
-            )
-        
-        self._skip_con = skip_con
-        if skip_con:
-            self._skip_conv = nn.Conv2d(in_channels, out_channels, stride=1, padding=1, kernel_size=3)    
-        
-        self._sample_mode = sample_mode
-        if sample_mode == ResBlockSampleMode.UPSAMPLE2X:
-            self._sample = Upsample2X(in_channels, in_channels, use_conv=use_conv)
-            self._sample_skip = Upsample2X(in_channels, in_channels, use_conv=use_conv)
-        elif sample_mode == ResBlockSampleMode.DOWNSAMPLE2X:
-            self._sample = Downsample2X(in_channels, in_channels, use_conv=use_conv)
-            self._sample_skip = Downsample2X(in_channels, in_channels, use_conv=use_conv)
-        else:
-            self._sample = self._sample_skip = nn.Identity()         
-        
-        self._pre_concat_input = nn.Sequential(
-            nn.GroupNorm(32, in_channels),
-            nn.SiLU()
-        )
-        self._pre_concat_conv = nn.Conv2d(in_channels, out_channels, stride=1, padding=1, kernel_size=3)
-        
-        self._aft_concat_norm = nn.GroupNorm(32, out_channels)
-        self._aft_concat_input = nn.Sequential(
-            nn.SiLU(),
-            nn.Dropout(dropout),
-            zero_module(nn.Conv2d(out_channels, out_channels, stride=1, padding=1, kernel_size=3))
-        )
-    
-    def forward(self, x, emb=None):
-        mid_out = self._pre_concat_input(x)
-        mid_out = self._sample(mid_out)
-        mid_out = self._pre_concat_conv(mid_out)
-        
-        if self._emb_size is not None:
-            emb_out = self._emb_seq(emb)
-            while len(emb_out.shape) < len(mid_out.shape):
-                emb_out = emb_out[..., None]
-            
-            if self._use_scale_shift_norm:
-                scale, shift = torch.chunk(emb_out, 2, dim=1)
-                out = self._aft_concat_norm(mid_out) * (1 + scale) + shift
-                out = self._aft_concat_input(out)
-            else:
-                mid_out += emb_out
-                out = self._aft_concat_input(self._aft_concat_norm(mid_out))
-        else:
-            out = self._aft_concat_input(self._aft_concat_norm(mid_out))
-        
-        if self._skip_con:
-            return self._skip_conv(self._sample_skip(x)) + out
-        else:
-            return out
 
-        
-class QKVAttention(nn.Module):
-    """
-    A module which performs QKV attention and splits in a different order.
-    https://github.com/epfml/text_to_image_generation/blob/main/guided_diffusion/unet.py#L361
-    """
-    def __init__(self, n_heads):
-        super().__init__()
-        self.n_heads = n_heads
-
-    def forward(self, qkv):
-        """
-        Apply QKV attention.
-
-        :param qkv: an [N x (H * 3 * C) x T] tensor of Qs, Ks, and Vs.
-        :return: an [N x (H * C) x T] tensor after attention.
-        """
-        bs, width, length = qkv.shape
-        assert width % (3 * self.n_heads) == 0
-        ch = width // (3 * self.n_heads)
-        q, k, v = qkv.reshape(bs * self.n_heads, ch * 3, length).split(ch, dim=1)
-        scale = 1 / math.sqrt(math.sqrt(ch))
-        weight = torch.einsum(
-            "bct,bcs->bts", q * scale, k * scale
-        )  # More stable with f16 than dividing afterwards
-        weight = torch.softmax(weight.float(), dim=-1).type(weight.dtype)
-        a = torch.einsum("bts,bcs->bct", weight, v)
-        return a.reshape(bs, -1, length)
-
-    
 class SelfAttention(nn.Module):
     """
     https://github.com/epfml/text_to_image_generation/blob/main/guided_diffusion/unet.py#L361
@@ -368,6 +277,115 @@ class SelfAttention(nn.Module):
         x = self.norm_out(self.scale*x + h)
         return x.reshape(b, c, *spatial)
 
+
+class ResBlock(nn.Module):
+    def __init__(self,
+        in_channels,
+        out_channels,
+        sample_mode=ResBlockSampleMode.IDENTITY,
+        emb_size=1024, 
+        dropout=0.1,
+        skip_con=True,
+        use_scale_shift_norm=True,
+        use_conv=True
+    ):
+        super().__init__()
+        self._emb_size = emb_size
+        self._use_scale_shift_norm  = use_scale_shift_norm 
+        if self._emb_size is not None:
+            self._emb_seq = nn.Sequential(
+                nn.SiLU(),
+                nn.Linear(emb_size, 2 * out_channels if use_scale_shift_norm else out_channels)
+            )
+        
+        self._skip_con = skip_con
+        if skip_con:
+            self._skip_conv = self.get_convolution(in_channels, out_channels)
+        
+        self._sample_mode = sample_mode
+        if sample_mode == ResBlockSampleMode.UPSAMPLE2X:
+            self._sample = Upsample2X(in_channels, in_channels, use_conv=use_conv)
+            self._sample_skip = Upsample2X(in_channels, in_channels, use_conv=use_conv)
+        elif sample_mode == ResBlockSampleMode.DOWNSAMPLE2X:
+            self._sample = Downsample2X(in_channels, in_channels, use_conv=use_conv)
+            self._sample_skip = Downsample2X(in_channels, in_channels, use_conv=use_conv)
+        else:
+            self._sample = self._sample_skip = nn.Identity()         
+        
+        self._pre_concat_input = nn.Sequential(
+            nn.GroupNorm(32, in_channels),
+            nn.SiLU()
+        )
+        self._pre_concat_conv = self.get_convolution(in_channels, out_channels)
+        
+        self._aft_concat_norm = nn.GroupNorm(32, out_channels)
+        self._aft_concat_input = nn.Sequential(
+            nn.SiLU(),
+            nn.Dropout(dropout)
+        )
+        self._aft_concat_conv = zero_module(self.get_convolution(out_channels, out_channels))
+
+
+    def get_convolution(self, in_channels, out_channels):
+        return nn.Conv2d(in_channels, out_channels, stride=1, padding=1, kernel_size=3)
+
+
+    def forward_conv(self, conv, x):
+        return conv(x)
+
+
+    def forward(self, x, emb=None):
+        mid_out = self._pre_concat_input(x)
+        mid_out = self._sample(mid_out)
+        mid_out = self.forward_conv(self._pre_concat_conv, mid_out)
+        
+        if self._emb_size is not None:
+            emb_out = self._emb_seq(emb)
+            while len(emb_out.shape) < len(mid_out.shape):
+                emb_out = emb_out[..., None]
+            
+            if self._use_scale_shift_norm:
+                scale, shift = torch.chunk(emb_out, 2, dim=1)
+                out = self._aft_concat_norm(mid_out) * (1 + scale) + shift
+                out = self._aft_concat_input(out)
+            else:
+                mid_out += emb_out
+                out = self._aft_concat_input(self._aft_concat_norm(mid_out))
+        else:
+            out = self._aft_concat_input(self._aft_concat_norm(mid_out))
+        
+        out = self.forward_conv(self._aft_concat_conv, out)
+
+        if self._skip_con:
+            return self.forward_conv(self._skip_conv, self._sample_skip(x)) + out
+        else:
+            return out
+
+
+class AdaptiveSpatioTemporalResBlock(ResBlock):
+    def __init__(self,
+        in_channels,
+        out_channels,
+        sample_mode=ResBlockSampleMode.IDENTITY,
+        emb_size=1024, 
+        dropout=0.1,
+        skip_con=True,
+        use_scale_shift_norm=True,
+        use_conv=True
+    ):
+        super().__init__(in_channels, out_channels, sample_mode, emb_size, dropout, skip_con, use_scale_shift_norm, use_conv)
+        self.forward_temporal = True
+
+    def get_convolution(self, in_channels, out_channels):
+        return AdaptivePseudo3DConv(in_channels, out_channels, kernel_size=3, temp_kernel_size=3, padding=1, bias=True, is_temporal=True)
+
+    def forward_conv(self, conv, x):
+        return conv(x, temporal=self.forward_temporal)
+
+    def forward(self, x, emb=None, temporal=True):
+        self.forward_temporal = temporal
+        return super().forward(x, emb)
+
     
 class SelfAttentionResBlock(ResBlock):
     def __init__(self, 
@@ -380,7 +398,6 @@ class SelfAttentionResBlock(ResBlock):
         skip_con=True,
         use_scale_shift_norm=True
     ):
-
         super().__init__(in_channels, out_channels, ResBlockSampleMode.IDENTITY, emb_size, dropout, skip_con, use_scale_shift_norm)
         self.self_at = SelfAttention(out_channels, mha_heads, mha_head_channels)
         
@@ -389,6 +406,25 @@ class SelfAttentionResBlock(ResBlock):
         return self.self_at(x)
     
     
+class AdaptiveSpatioTemporalSelfAttentionResBlock(AdaptiveSpatioTemporalResBlock):
+    def __init__(self, 
+        in_channels, 
+        out_channels, 
+        mha_heads=4, 
+        mha_head_channels=None, 
+        emb_size=1024, 
+        dropout=0.1, 
+        skip_con=True,
+        use_scale_shift_norm=True
+    ):
+        super().__init__(in_channels, out_channels, ResBlockSampleMode.IDENTITY, emb_size, dropout, skip_con, use_scale_shift_norm)
+        self.self_at = AdaptiveSpatioTemporalSelfAttention(out_channels, mha_heads, mha_head_channels, is_temporal=True)
+
+    def forward(self, x, emb=None, temporal=True):
+        x = super().forward(x, emb, temporal=temporal)
+        return self.self_at(x, temporal=temporal)
+
+
 class VLBDiffusionLoss():
     # https://github.com/epfml/text_to_image_generation/blob/main/guided_diffusion/losses.py#L12
     @staticmethod
