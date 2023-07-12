@@ -134,8 +134,19 @@ class AdaptiveSpatioTemporalSelfAttention(nn.Module):
 
 
     def seed_with_spatial_attention(self, base_spatial_attention):
-        self.spatial_att.weight.copy_(base_spatial_attention.weight)
-        self.spatial_att.bias.copy_(base_spatial_attention.bias)
+        if self.torch_mha:
+            self.spatial_att.weight.copy_(base_spatial_attention.spatial_att.weight)
+            self.spatial_att.bias.copy_(base_spatial_attention.spatial_att.bias)
+        else:
+            self.qkv.weight.copy_(base_spatial_attention.qkv.weight)
+            self.qkv.bias.copy_(base_spatial_attention.qkv.bias)
+            self.proj_out.weight.copy_(base_spatial_attention.proj_out.weight)
+            self.proj_out.bias.copy_(base_spatial_attention.proj_out.bias)
+
+        self.norm_in.weight.copy_(base_spatial_attention.norm_in.weight)
+        self.norm_in.bias.copy_(base_spatial_attention.norm_in.bias)
+        self.norm_out_spat.weight.copy_(base_spatial_attention.norm_out_spat.weight)
+        self.norm_out_spat.bias.copy_(base_spatial_attention.norm_out_spat.bias)
 
 
     def forward(self, x, temporal=True):
@@ -143,43 +154,47 @@ class AdaptiveSpatioTemporalSelfAttention(nn.Module):
         is_vid_data = x.ndim == 5
         temporal = temporal and is_vid_data
 
+        x = self.norm_in(x)
         if is_vid_data:
             x = rearrange(x, 'b c t h w -> (b t) (h w) c')
         else:
             x = rearrange(x, 'b c h w -> b (h w) c')
 
-        x = self.norm_in(x)
         if self.torch_mha:
-            h, _ = self.spatial_att(x, x, x)
+            att_out, _ = self.spatial_att(x, x, x)
         else:
-            h = h.swapaxes(-2, -1)
-            qkv = self.qkv(x)
-            h = self.att(qkv)
-            h = self.proj_out(h)
-            h = h.swapaxes(-1, -2)
-        x = self.norm_out_spat(self.scale*x + h)
+            att_out = x.swapaxes(-2, -1)
+            qkv = self.qkv(att_out)
+            att_out = self.att(qkv)
+            att_out = self.proj_out(att_out)
+            att_out = att_out.swapaxes(-1, -2)
+
+        x = self.scale*x + att_out
 
         if is_vid_data:
             x = rearrange(x, '(b t) (h w) c -> b c t h w', b = b, h = h, w = w)
         else:
             x = rearrange(x, 'b (h w) c -> b c h w', h = h, w = w)
 
-        if not temporal or not self._is_temporal:
+        x = self.norm_out_spat(x)
+
+        if not temporal or not self.is_temporal:
             return x
 
         x = rearrange(x, 'b c t h w -> (b h w) t c')
 
         if self.torch_mha:
-            h, _ = self.temp_att(x, x, x)
+            att_out, _ = self.temp_att(x, x, x)
         else:
-            h = h.swapaxes(-2, -1)
-            qkv = self.qkv(x)
-            h = self.att(qkv)
-            h = self.proj_out(h)
-            h = h.swapaxes(-1, -2)
+            att_out = x.swapaxes(-2, -1)
+            qkv = self.qkv(att_out)
+            att_out = self.att(qkv)
+            att_out = self.proj_out(att_out)
+            att_out = att_out.swapaxes(-1, -2)
 
-        x = self.norm_out_temp(self.scale*x + h)
+        x = self.scale*x + att_out
         x = rearrange(x, '(b h w) t c -> b c t h w', h = h, w = w)
+        x = self.norm_out_temp(x)
         return x
 
 
@@ -208,11 +223,12 @@ class Upsample2X(nn.Module):
 
     def forward(self, x):
         b = x.shape[0]
-        x = rearrange(x, 'b c t h w -> (b t) c h w') if x.ndim == 5 else x
+        temporal = x.ndim == 5
+        x = rearrange(x, 'b c t h w -> (b t) c h w') if temporal else x
         if self._use_conv:
             x = self._conv(x)
         x = self._sample(x)
-        return rearrange(x, '(b t) c h w -> b c t h w', b=b) if x.ndim == 5 else x
+        return rearrange(x, '(b t) c h w -> b c t h w', b=b) if temporal else x
 
 
 class Downsample2X(nn.Module):
@@ -228,9 +244,11 @@ class Downsample2X(nn.Module):
 
     def forward(self, x):
         b = x.shape[0]
-        x = rearrange(x, 'b c t h w -> (b t) c h w') if x.ndim == 5 else x
+        temporal = x.ndim == 5
+        x = rearrange(x, 'b c t h w -> (b t) c h w') if temporal else x
         x = self._sample(x)
-        return rearrange(x, '(b t) c h w -> b c t h w', b=b) if x.ndim == 5 else x
+        x = rearrange(x, '(b t) c h w -> b c t h w', b=b) if temporal else x
+        return x
 
 
 class SelfAttention(nn.Module):
@@ -287,7 +305,7 @@ class ResBlock(nn.Module):
         dropout=0.1,
         skip_con=True,
         use_scale_shift_norm=True,
-        use_conv=True
+        use_sample_conv=True
     ):
         super().__init__()
         self._emb_size = emb_size
@@ -304,11 +322,11 @@ class ResBlock(nn.Module):
         
         self._sample_mode = sample_mode
         if sample_mode == ResBlockSampleMode.UPSAMPLE2X:
-            self._sample = Upsample2X(in_channels, in_channels, use_conv=use_conv)
-            self._sample_skip = Upsample2X(in_channels, in_channels, use_conv=use_conv)
+            self._sample = Upsample2X(in_channels, in_channels, use_conv=use_sample_conv)
+            self._sample_skip = Upsample2X(in_channels, in_channels, use_conv=use_sample_conv)
         elif sample_mode == ResBlockSampleMode.DOWNSAMPLE2X:
-            self._sample = Downsample2X(in_channels, in_channels, use_conv=use_conv)
-            self._sample_skip = Downsample2X(in_channels, in_channels, use_conv=use_conv)
+            self._sample = Downsample2X(in_channels, in_channels, use_conv=use_sample_conv)
+            self._sample_skip = Downsample2X(in_channels, in_channels, use_conv=use_sample_conv)
         else:
             self._sample = self._sample_skip = nn.Identity()         
         
@@ -336,9 +354,11 @@ class ResBlock(nn.Module):
 
     def forward(self, x, emb=None):
         mid_out = self._pre_concat_input(x)
+
         mid_out = self._sample(mid_out)
+
         mid_out = self.forward_conv(self._pre_concat_conv, mid_out)
-        
+
         if self._emb_size is not None:
             emb_out = self._emb_seq(emb)
             while len(emb_out.shape) < len(mid_out.shape):
@@ -371,10 +391,35 @@ class AdaptiveSpatioTemporalResBlock(ResBlock):
         dropout=0.1,
         skip_con=True,
         use_scale_shift_norm=True,
-        use_conv=True
+        use_sample_conv=True
     ):
-        super().__init__(in_channels, out_channels, sample_mode, emb_size, dropout, skip_con, use_scale_shift_norm, use_conv)
+        super().__init__(in_channels, out_channels, sample_mode, emb_size, dropout, skip_con, use_scale_shift_norm, use_sample_conv)
         self.forward_temporal = True
+
+    def seed_with_res_block(self, base_res_block):
+        #pylint: disable = E, W, R, C
+        base_pre_conv = base_res_block._pre_concat_conv._conv2d if isinstance(base_res_block._pre_concat_conv, AdaptivePseudo3DConv) else base_res_block._pre_concat_conv
+        self._pre_concat_conv.seed_with_conv2d(base_pre_conv) 
+        base_aft_conv = base_res_block._aft_concat_conv._conv2d if isinstance(base_res_block._aft_concat_conv, AdaptivePseudo3DConv) else base_res_block._aft_concat_conv
+        self._aft_concat_conv.seed_with_conv2d(base_aft_conv)
+        if self._skip_con and base_res_block._skip_con:
+            base_skip_conv = base_res_block._skip_conv._conv2d if isinstance(base_res_block._skip_conv, AdaptivePseudo3DConv) else base_res_block._skip_conv
+            self._skip_conv.seed_with_conv2d(base_skip_conv)
+
+        if self._emb_size is not None and base_res_block._emb_size is not None:
+            self._emb_seq[1].weight.copy_(base_res_block._emb_seq[1].weight)
+            self._emb_seq[1].bias.copy_(base_res_block._emb_seq[1].bias)
+
+        if self._use_sample_conv and base_res_block._use_sample_conv and self._sample_mode == base_res_block._sample_mode and self._sample_mode != ResBlockSampleMode.IDENTITY:
+            self._sample._sample.weight.copy_(base_res_block._sample._sample.weight)
+            self._sample._sample.bias.copy_(base_res_block._sample._sample.bias)
+            self._sample_skip._sample.weight.copy_(base_res_block._sample_skip._sample.weight)
+            self._sample_skip._sample.bias.copy_(base_res_block._sample_skip._sample.bias)
+
+        self._pre_concat_input[0].weight.copy_(base_res_block._pre_concat_input[0].weight)
+        self._pre_concat_input[0].bias.copy_(base_res_block._pre_concat_input[0].bias)
+        self._aft_concat_norm.weight.copy_(base_res_block._aft_concat_norm.weight)
+        self._aft_concat_norm.bias.copy_(base_res_block._aft_concat_norm.bias)
 
     def get_convolution(self, in_channels, out_channels):
         return AdaptivePseudo3DConv(in_channels, out_channels, kernel_size=3, temp_kernel_size=3, padding=1, bias=True, is_temporal=True)
@@ -396,9 +441,10 @@ class SelfAttentionResBlock(ResBlock):
         emb_size=1024, 
         dropout=0.1, 
         skip_con=True,
-        use_scale_shift_norm=True
+        use_scale_shift_norm=True,
+        use_sample_conv=True
     ):
-        super().__init__(in_channels, out_channels, ResBlockSampleMode.IDENTITY, emb_size, dropout, skip_con, use_scale_shift_norm)
+        super().__init__(in_channels, out_channels, ResBlockSampleMode.IDENTITY, emb_size, dropout, skip_con, use_scale_shift_norm, use_sample_conv)
         self.self_at = SelfAttention(out_channels, mha_heads, mha_head_channels)
         
     def forward(self, x, emb=None):
@@ -415,10 +461,15 @@ class AdaptiveSpatioTemporalSelfAttentionResBlock(AdaptiveSpatioTemporalResBlock
         emb_size=1024, 
         dropout=0.1, 
         skip_con=True,
-        use_scale_shift_norm=True
+        use_scale_shift_norm=True,
+        use_sample_conv=True
     ):
-        super().__init__(in_channels, out_channels, ResBlockSampleMode.IDENTITY, emb_size, dropout, skip_con, use_scale_shift_norm)
+        super().__init__(in_channels, out_channels, ResBlockSampleMode.IDENTITY, emb_size, dropout, skip_con, use_scale_shift_norm, use_sample_conv)
         self.self_at = AdaptiveSpatioTemporalSelfAttention(out_channels, mha_heads, mha_head_channels, is_temporal=True)
+
+    def seed_with_res_block(self, base_res_block):
+        super().seed_with_res_block(base_res_block)
+        self.self_at.seed_with_spatial_attention(base_res_block.self_at) 
 
     def forward(self, x, emb=None, temporal=True):
         x = super().forward(x, emb, temporal=temporal)

@@ -109,6 +109,7 @@ captions_preprocess = lambda captions: [cap[:77] for cap in captions]
 
 vqgan = load_vqgan()
 
+print("Creating UNet")
 unet_in_channels = 3
 unet_in_size = 64
 unet = UNet(
@@ -134,7 +135,7 @@ model = LatentDiffusionTrainer(
     unet, 
     vqgan=vqgan,
     transformable_data_module=data,
-    diffusion_tools=DiffusionTools(device=device, in_size=unet_in_size, steps=100, noise_scheduler=LinearScheduler(), clamp_x_start_in_sample=False), 
+    diffusion_tools=DiffusionTools(device=device, in_size=unet_in_size, steps=1000, noise_scheduler=LinearScheduler(), clamp_x_start_in_sample=False), 
     captions_preprocess=captions_preprocess,
     sample_images_out_base_path=sample_images_out_base_path,
     checkpoint_every_val_epochs=1,
