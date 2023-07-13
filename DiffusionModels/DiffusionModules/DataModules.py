@@ -7,7 +7,11 @@ import braceexpand
 import operator
 import functools
 from enum import Enum
+from WebvidReader.VideoDataset import VideoDataset
 import webdataset as wds
+from torch.nn.utils.rnn import pad_packed_sequence
+from einops import rearrange
+from torch.utils.data import DataLoader
 
 class CollateTypeFunction():
     @staticmethod
@@ -28,11 +32,19 @@ class CollateTypeFunction():
     def ci(data):
         return data
 
+    @staticmethod
+    def cndps(data, padding_value=-1):
+        data, captions = CollateTypeFunction.cnd(data)
+        video, lengths = pad_packed_sequence(data, padding_value=padding_value, batch_first=True)
+        return { "video": video, "caption": captions, "length": lengths, "fps": None }
+
+
 collate_type_to_function = {
     "COLLATE_NONE_TUPLE": CollateTypeFunction.cnt,
     "COLLATE_NONE_DICT": CollateTypeFunction.cnd,
     "COLLATE_IDENTITY": CollateTypeFunction.ci
 }
+
 
 class CollateType(Enum):
     COLLATE_NONE_TUPLE="COLLATE_NONE_TUPLE"
@@ -42,8 +54,33 @@ class CollateType(Enum):
     def __call__(self, *args):
         return collate_type_to_function[self.value](*args)
 
+class TransformableDataModule(LightningDataModule, ABC):
+    @abstractmethod
+    def train_dataloader(self):
+        pass
+    
+    @abstractmethod
+    def val_dataloader(self):
+        pass
 
-class TransformableImageDataModule(LightningDataModule, ABC):
+    @abstractmethod
+    def transform_batch(self, batch):
+        pass
+
+    @abstractmethod
+    def reverse_transform_batch(self, batch):
+        pass
+
+    @abstractmethod
+    def transform(self, image):
+        pass
+
+    @abstractmethod
+    def reverse_transform(self, image):
+        pass
+
+
+class TransformableImageDataModule(TransformableDataModule, ABC):
     def __init__(self, collate_type=CollateType.COLLATE_NONE_TUPLE, collate_fn=None, img_in_target_size=64):
         super(TransformableImageDataModule, self).__init__()
         self.img_in_target_size = img_in_target_size
@@ -53,21 +90,21 @@ class TransformableImageDataModule(LightningDataModule, ABC):
     @abstractmethod
     def train_dataloader(self):
         pass
-    
+
     @abstractmethod
     def val_dataloader(self):
         pass
 
-    def transform_images(self, batch):
+    def transform_batch(self, batch):
         return self.transform.transform_images(batch)
 
-    def reverse_transform_images(self, batch):
+    def reverse_transform_batch(self, batch):
         return self.transform.reverse_transform_images(batch)
 
-    def transform_image(self, image):
+    def transform(self, image):
         return self.transform.transform_image(image)
 
-    def reverse_transform_image(self, image):
+    def reverse_transform(self, image):
         return self.transform.reverse_transform_image(image)
 
 
@@ -125,5 +162,74 @@ class WebdatasetDataModule(TransformableImageDataModule):
         ds = wds.WebDataset(self.val_paths, shardshuffle=True).shuffle(1000, initial=10000).decode("pil").to_tuple("jpg", "json").map(WebdatasetDataModule.standard_preprocess)
         return wds.WebLoader(ds, num_workers=self.num_workers, batch_size=self.batch_size, collate_fn=self.collate)
 
-        
+
+class VideoDatasetDataModule(TransformableDataModule):
+    def __init__(
+        self, 
+        train_csv_path,
+        train_data_path, 
+        val_csv_path, 
+        val_data_path, 
+        batch_size=16, 
+        num_workers=4, 
+        target_resolution=(64, 64),
+        padding_value=-1
+    ):
+        super(VideoDatasetDataModule, self).__init__()
+        self.batch_size = batch_size
+        self.train_csv_path = train_csv_path
+        self.train_data_path = train_data_path
+        self.val_csv_path = val_csv_path
+        self.val_data_path = val_data_path
+        self.num_workers = num_workers
+        self.target_resolution = target_resolution
+        self.padding_value = padding_value
+        self.t_data = VideoDataset(
+            self.train_csv_path, 
+            self.train_data_path, 
+            target_resolution=self.target_resolution, 
+            channels_first=False,
+            max_frames_per_part=16,
+            nth_frames=10
+        )
+        self.v_data = VideoDataset(
+            self.val_csv_path, 
+            self.val_data_path, 
+            target_resolution=self.target_resolution, 
+            channels_first=False,
+            max_frames_per_part=16,
+            nth_frames=10
+        )
+        self.collate = lambda data: CollateTypeFunction.cndps(data, padding_value=self.padding_value)
+
+    def train_dataloader(self):
+        return DataLoader(
+            self.t_data,
+            batch_size=self.batch_size ,
+            shuffle=True,
+            collate_fn=self.collate,
+            pin_memory=False,
+            num_workers=self.num_workers
+        )
     
+    def val_dataloader(self):
+        return DataLoader(
+            self.v_data,
+            batch_size=self.batch_size ,
+            shuffle=True,
+            collate_fn=self.collate,
+            pin_memory=False,
+            num_workers=self.num_workers
+        )
+
+    def transform_batch(self, batch):
+        return self.t_data.normalize(batch)
+
+    def reverse_transform_batch(self, batch):
+        return self.t_data.reverse_normalize(batch)
+
+    def transform(self, video):
+        return self.t_data.normalize(video)
+
+    def reverse_transform(self, video):
+        return self.t_data.reverse_normalize(video)

@@ -33,7 +33,7 @@ unet = UpscalerUNet(device=device).to(device)
 summary(unet, [(1, 6, 256, 256), (1, 256), (1, 512)], verbose=1)
 wandb.init()
 wandb_logger = WandbLogger()
-batch_size = 2
+batch_size = 8
 wandb.save("*.py*")
 
 # url_train = "/home/shared-data/LAION-400M/laion400m-data/{00010..99999}.tar"
@@ -56,7 +56,7 @@ model = UpscalerDiffusionTrainer(
     start_size=64,
     target_size=256,
     transformable_data_module=data,
-    diffusion_tools=DiffusionTools(device=device, in_size=256, steps=1000, noise_scheduler=LinearScheduler()), 
+    diffusion_tools=DiffusionTools(device=device, steps=1000, noise_scheduler=LinearScheduler()), 
     captions_preprocess=captions_preprocess,
     sample_images_out_base_path=sample_images_out_base_path,
     checkpoint_every_val_epochs=1,

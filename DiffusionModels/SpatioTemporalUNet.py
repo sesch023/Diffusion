@@ -22,6 +22,7 @@ unet = SpatioTemporalUNet(
     mha_head_channels=None,
     i_emb_size=512,
     t_emb_size=256,
+    f_emb_size=256,
     mid_emb_size=1024,
     in_channels=unet_in_channels,
     out_channels=unet_in_channels*2,
