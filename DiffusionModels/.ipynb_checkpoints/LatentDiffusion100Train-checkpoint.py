@@ -29,8 +29,8 @@ gpus=[1]
 device = f"cuda:{str(gpus[0])}" if torch.cuda.is_available() else "cpu"
 wandb.init()
 wandb_logger = WandbLogger()
-batch_size = 16
-num_workers = 8
+batch_size = 8
+num_workers = 4
 wandb.save("*.py*")
 
 def load_vqgan():
@@ -133,6 +133,7 @@ sample_images_out_base_path="samples_latent_100/"
 model = LatentDiffusionTrainer(
     unet, 
     vqgan=vqgan,
+    latent_shape=(3, 64, 64),
     transformable_data_module=data,
     diffusion_tools=DiffusionTools(device=device, in_size=unet_in_size, steps=100, noise_scheduler=LinearScheduler(), clamp_x_start_in_sample=False), 
     captions_preprocess=captions_preprocess,
@@ -145,7 +146,7 @@ model = LatentDiffusionTrainer(
 lr_monitor = cb.LearningRateMonitor(logging_interval='epoch')
 trainer = pl.Trainer(
     limit_train_batches=100, 
-    check_val_every_n_epoch=100, 
+    check_val_every_n_epoch=200, 
     limit_val_batches=5, 
     num_sanity_val_steps=0, 
     max_epochs=10000, 

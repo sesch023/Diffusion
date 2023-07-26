@@ -1,11 +1,12 @@
 from DiffusionModules.Diffusion import *
 from DiffusionModules.DiffusionTrainer import *
 from DiffusionModules.DiffusionModels import *
+from DiffusionModules.DataModules import *
 import os
 import torch
 from torch import optim, nn, utils, Tensor
 import lightning.pytorch as pl
-from pytorch_lightning.loggers import WandbLogger
+from lightning.pytorch.loggers import WandbLogger
 from torchmetrics.multimodal import CLIPScore
 import lightning.pytorch.callbacks as cb
 import webdataset as wds
@@ -25,51 +26,33 @@ device = f"cuda:{str(gpus[0])}" if torch.cuda.is_available() else "cpu"
 unet = BasicUNet(device=device).to(device)
 wandb.init()
 wandb_logger = WandbLogger()
-batch_size = 16
+batch_size = 8
 wandb.save("*.py*")
-
-
-def preprocess(sample):
-    image, json = sample
-    label = json["caption"]
-    return image, label
 
 # url_train = "/home/shared-data/LAION-400M/laion400m-data/{00010..99999}.tar"
 # url_test = "/home/shared-data/LAION-400M/laion400m-data/{00000..00009}.tar"
 
-cifar_data = CIFAR10DataModule(
-    
-)
-url_train = "/home/archive/CocoWebdataset/mscoco/{00000..00055}.tar"
-url_test = "/home/archive/CocoWebdataset/mscoco/{00056..00059}.tar"
-
-dataset_train = wds.WebDataset(url_train).shuffle(1000).decode("pil").to_tuple("jpg", "json").map(preprocess)
-dataset_val = wds.WebDataset(url_test).decode("pil").to_tuple("jpg", "json").map(preprocess)
-
-def collate_none(data):
-    data = list(filter(lambda x: x[0] is not None and x[1] is not None, data))
-    images = [e[0] for e in data]
-    captions = [e[1] for e in data]
-    return images, captions
-
-loader_train = wds.WebLoader(dataset_train, num_workers=4, batch_size=batch_size, collate_fn=collate_none)
-loader_val = wds.WebLoader(dataset_val, num_workers=4, batch_size=batch_size, collate_fn=collate_none)       
+data = WebdatasetDataModule(
+    ["/home/archive/CocoWebdataset/mscoco/{00000..00055}.tar"],
+    ["/home/archive/CocoWebdataset/mscoco/{00056..00059}.tar"],
+    batch_size=batch_size
+)  
         
 captions_preprocess = lambda captions: [cap[:77] for cap in captions]
 
 clip_tools = ClipTools(device=device)
-translator_model_path = "clip_translator/final.ckpt"
+translator_model_path = "/home/jovyan/DiffusionModels/DiffusionModels/clip_translator/model.ckpt"
 sample_images_out_base_path="samples_cococos/"
 model = DiffusionTrainer(
     unet, 
+    transformable_data_module=data,
     diffusion_tools=DiffusionTools(device=device, steps=1000, noise_scheduler=CosineScheduler()), 
-    device=device, 
     captions_preprocess=captions_preprocess,
     sample_images_out_base_path=sample_images_out_base_path,
     checkpoint_every_val_epochs=1,
-    embedding_provider=ClipEmbeddingProvider(device=device, clip_tools=clip_tools),
-    alt_validation_emb_provider=ClipTranslatorEmbeddingProvider(device=device, clip_tools=clip_tools, translator_model_path=translator_model_path)
-    #alt_validation_emb_provider=ClipEmbeddingProvider(device=device, clip_tools=clip_tools)
+    embedding_provider=ClipEmbeddingProvider(clip_tools=clip_tools),
+    #alt_validation_emb_provider=ClipTranslatorEmbeddingProvider(device=device, clip_tools=clip_tools, translator_model_path=translator_model_path)
+    alt_validation_emb_provider=ClipEmbeddingProvider(clip_tools=clip_tools)
 )
 
 lr_monitor = cb.LearningRateMonitor(logging_interval='epoch')
@@ -88,5 +71,5 @@ trainer = pl.Trainer(
     devices=gpus
 )
 
-trainer.fit(model, loader_train, loader_val)
-torch.save(model.state_dict(), f"{sample_images_out_base_path}/model.ckpt.pt")
+trainer.fit(model, data)
+torch.save(model.state_dict(), f"{sample_images_out_base_path}/model.ckpt")

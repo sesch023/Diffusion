@@ -3,7 +3,7 @@ import shutil
 
 import torch
 import torch.nn.functional as F
-import pytorch_lightning as pl
+import lightning.pytorch as pl
 from DiffusionModules.LatentVQGANModules import *
 from DiffusionModules.VQGANLosses import *
 from DiffusionModules.Util import ImageTransformer
@@ -40,23 +40,25 @@ class VQModel(pl.LightningModule):
         encoder,
         decoder,
         loss,
+        transformable_data_module,
         n_codebook_embeddings,
         codebook_embedding_size,
         z_channels=256,
         image_key="image",
-        image_transformer=None,
         monitor=None,
         remap=None,
         sane_index_shape=False,  # tell vector quantizer to return indices as bhw
         reconstructions_out_base_path = "reconstructions/",
         checkpoint_every_val_epochs = 1,
-        learning_rate=4.5e-6
+        learning_rate=4.5e-6,
+        caption_key="caption",
+        embedding_provider=None
     ):
         super().__init__()
         self.image_key = image_key
         self.encoder = encoder if encoder is not None else Encoder(z_channels=z_channels, **DEFAULT_ENCODER_ARGS)
         self.decoder = decoder if decoder is not None else Decoder(z_channels=z_channels, **DEFAULT_DECODER_ARGS)
-        self.image_transformer = image_transformer if image_transformer is not None else ImageTransformer(img_target_size=encoder.resolution)
+        self.transformable_data_module = transformable_data_module
         self.loss = loss if loss is not None else VQLPIPSWithDiscriminator(disc_start=10000)
         self.learning_rate = learning_rate
         self.quantize = VectorQuantizer(
@@ -76,47 +78,49 @@ class VQModel(pl.LightningModule):
         self.prev_checkpoint = None
         self.prev_checkpoint_val_avg = float("inf")
 
+        self.caption_key = caption_key
+        self.embedding_provider = embedding_provider
+
         if monitor is not None:
             self.monitor = monitor
 
         self.automatic_optimization = False
-        self.save_hyperparameters()
+        self.save_hyperparameters(ignore=['loss', 'decoder', 'encoder', 'embedding_provider'])
 
-    def encode(self, x):
-        h = self.encoder(x)
+    def encode(self, x, emb=None):
+        h = self.encoder(x, emb=emb)
         h = self.quant_conv(h)
         quant, emb_loss, info = self.quantize(h)
         return quant, emb_loss, info
 
-    def decode(self, quant):
+    def decode(self, quant, emb=None, clamp=False):
         quant = self.post_quant_conv(quant)
-        dec = self.decoder(quant)
+        dec = self.decoder(quant, emb=emb)
+        dec = dec.clamp(-1, 1) if clamp else dec
         return dec
 
-    def decode_code(self, code_b):
+    def decode_code(self, code_b, emb=None, clamp=False):
         quant_b = self.quantize.embed_code(code_b)
-        dec = self.decode(quant_b)
+        dec = self.decode(quant_b, emb=emb, clamp=clamp)
         return dec
 
-    def forward(self, input):
-        quant, diff, _ = self.encode(input)
-        dec = self.decode(quant)
+    def forward(self, x, emb=None, clamp=False):
+        quant, diff, _ = self.encode(x, emb=emb)
+        dec = self.decode(quant, emb=emb, clamp=clamp)
         return dec, diff
 
     def get_input(self, batch, k):
-        x = batch[k]
-        """
-        if len(x.shape) == 3:
-            x = x[..., None]
-        """
-        x = self.image_transformer.transform_images(x)
-        return x.float()
-
+        images = batch[k]
+        x = self.transformable_data_module.transform_batch(images)
+        captions = None if self.caption_key is None else batch[self.caption_key]
+        embs = None if self.embedding_provider is None else self.embedding_provider.get_embedding(images, captions)
+        return x.float(), captions, embs
 
     def training_step(self, batch, batch_idx):
         batch_size = len(batch[self.image_key])
-        x = self.get_input(batch, self.image_key).to(self.device)
-        xrec, qloss = self(x)
+        x, _, embs = self.get_input(batch, self.image_key)
+        x = x.to(self.device)
+        xrec, qloss = self(x, embs)
         opt_ae, opt_disc = self.optimizers() # pylint: disable=E0633
 
         # autoencode
@@ -146,8 +150,9 @@ class VQModel(pl.LightningModule):
 
     def validation_step(self, batch, batch_idx):
         batch_size = len(batch[self.image_key])
-        x = self.get_input(batch, self.image_key).to(self.device)
-        xrec, qloss = self(x)
+        x, captions, embs = self.get_input(batch, self.image_key)
+        x = x.to(self.device)
+        xrec, qloss = self(x, embs)
 
         aeloss, log_dict_ae = self.loss(qloss, x, xrec, 0, self.global_step,
                                         last_layer=self.get_last_layer(), split="val")
@@ -162,8 +167,8 @@ class VQModel(pl.LightningModule):
         # self.log_dict(log_dict_ae, batch_size=batch_size)
         self.log_dict(log_dict_disc, batch_size=batch_size)
 
-        self.save_reconstructions(xrec, batch_idx, note="reconstructions")
-        self.save_reconstructions(x, batch_idx, note="inputs")
+        self.save_reconstructions(xrec, batch_idx, captions=captions, note="reconstructions")
+        self.save_reconstructions(x, batch_idx, captions=captions, note="inputs")
       
         self.validation_step_outputs.append({"rec_loss": rec_loss, "disc_loss": discloss})
 
@@ -171,17 +176,12 @@ class VQModel(pl.LightningModule):
 
 
     def on_validation_epoch_end(self):
-        avg_dict = dict()
         outs = self.validation_step_outputs
         
-        for key in outs[0].keys():
-            values = [outs[i][key] for i in range(len(outs)) if key in outs[i]]
-            avg = sum(values) / len(values)
-            avg_dict[key] = avg
-
-        avg_loss = sum(avg_dict.values()) / len(avg_dict.values())
+        values = [outs[i]["rec_loss"] for i in range(len(outs)) if "rec_loss" in outs[i]]
+        avg_loss = sum(values) / len(values)
        
-        self.log_dict(avg_dict, on_step=False, on_epoch=True, prog_bar=True)
+        self.log_dict({"val_rec_loss":avg_loss}, on_step=False, on_epoch=True, prog_bar=True)
         self.val_epoch += 1
         if self.val_epoch % self.checkpoint_every_val_epochs == 0 and avg_loss < self.prev_checkpoint_val_avg:
             epoch = self.current_epoch
@@ -193,7 +193,11 @@ class VQModel(pl.LightningModule):
                 os.remove(self.prev_checkpoint)
             self.prev_checkpoint = path
             self.prev_checkpoint_val_avg = avg_loss
-            
+        
+        path = f"{self.reconstructions_out_base_path}/latest.ckpt"
+        print(f"Saving Checkpoint at: {path}")
+        self.trainer.save_checkpoint(path)
+
         self.validation_step_outputs.clear() 
 
     def save_reconstructions(self, reconstructions, batch_idx, captions=None, note=None):
@@ -205,7 +209,8 @@ class VQModel(pl.LightningModule):
             shutil.rmtree(path_folder)
         os.makedirs(path_folder)
         
-        reconstructions = self.image_transformer.reverse_transform_images(reconstructions.detach().cpu())
+        reconstructions = reconstructions.clamp(-1, 1)
+        reconstructions = self.transformable_data_module.reverse_transform_batch(reconstructions.detach().cpu())
             
         for image_id in range(len(reconstructions)):
             reconstructions[image_id].save(path_folder + f"img_{image_id}.png")

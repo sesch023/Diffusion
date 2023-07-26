@@ -34,6 +34,7 @@ class LatentDiffusionTrainer(pl.LightningModule):
         self, 
         unet, 
         vqgan, 
+        latent_shape,
         diffusion_tools, 
         transformable_data_module, 
         loss=None, 
@@ -66,6 +67,7 @@ class LatentDiffusionTrainer(pl.LightningModule):
         self.prev_checkpoint_val_avg = float("inf")
         self.validation_step_outputs = []
         self.save_images = lambda image, path: ImageLoader.save_image(image, path)
+        self.latent_shape = latent_shape
         
         if ema_beta is not None:   
             self.ema = ExponentialMovingAverage(ema_beta)
@@ -101,7 +103,7 @@ class LatentDiffusionTrainer(pl.LightningModule):
             i_embs = i_embs_req
         else:
             i_embs = None
-        images = self.transformable_data_module.transform_images(images).to(self.device)    
+        images = self.transformable_data_module.transform_batch(images).to(self.device)    
         with torch.no_grad():
             latents, _, _ = self.vqgan.encode(images, emb=i_embs_req)
         loss = self.diffusion_tools.train_step(self.unet, self.loss, latents, i_embs)
@@ -117,22 +119,22 @@ class LatentDiffusionTrainer(pl.LightningModule):
         images, captions = batch
         captions = self.captions_preprocess(captions) if self.captions_preprocess is not None else captions    
         i_embs = self.alt_validation_emb_provider.get_embedding(images, captions).to(self.device)
-        images = self.transformable_data_module.transform_images(images).to(self.device)    
+        images = self.transformable_data_module.transform_batch(images).to(self.device)    
 
-        normal_sampled_latents = self.diffusion_tools.sample_data(self.unet, images.shape[0], i_embs, self.cfg_scale)
-        ema_sampled_latents = self.diffusion_tools.sample_data(self.ema_unet, images.shape[0], i_embs, self.cfg_scale)
-        
+        latent_batch_shape = (images.shape[0], *self.latent_shape)
+        normal_sampled_latents = self.diffusion_tools.sample_data(self.unet, latent_batch_shape, i_embs, self.cfg_scale)
         quant_normal_sampled_latents, _, _ = self.vqgan.quantize(normal_sampled_latents)
-        quant_ema_sampled_latents, _, _ = self.vqgan.quantize(ema_sampled_latents)
+        samples_images = self.vqgan.decode(quant_normal_sampled_latents, emb=i_embs, clamp=True)
+        self.save_sampled_images(samples_images, captions, batch_idx, "normal")
 
-        normal_sampled_images = self.vqgan.decode(quant_normal_sampled_latents, emb=i_embs, clamp=True)
-        ema_samples_images = self.vqgan.decode(quant_ema_sampled_latents, emb=i_embs, clamp=True)
-
-        self.save_sampled_images(normal_sampled_images, captions, batch_idx, "normal")
-        self.save_sampled_images(ema_samples_images, captions, batch_idx, "ema")
+        if self.ema is not None:
+            ema_sampled_latents = self.diffusion_tools.sample_data(self.ema_unet, latent_batch_shape, i_embs, self.cfg_scale)
+            quant_ema_sampled_latents, _, _ = self.vqgan.quantize(ema_sampled_latents)
+            samples_images = self.vqgan.decode(quant_ema_sampled_latents, emb=i_embs, clamp=True)
+            self.save_sampled_images(samples_images, captions, batch_idx, "ema")
             
         try:
-            val_score = self.val_score(ema_samples_images.clamp(-1, 1), images, captions)
+            val_score = self.val_score(samples_images.clamp(-1, 1), images, captions)
         except RuntimeError as e:
             val_score = {"score": 0}
             print(f"Error with Score:  {e}")
@@ -177,7 +179,7 @@ class LatentDiffusionTrainer(pl.LightningModule):
             shutil.rmtree(path_folder)
         os.makedirs(path_folder)
         
-        sampled_images = self.transformable_data_module.reverse_transform_images(sampled_images.detach().cpu())
+        sampled_images = self.transformable_data_module.reverse_transform_batch(sampled_images.detach().cpu())
         sampled_images = [ImageLoader.load_image(image) for image in sampled_images]
         for image_id in range(len(sampled_images)):
             self.save_images(sampled_images[image_id], path_folder + f"img_{image_id}.png")

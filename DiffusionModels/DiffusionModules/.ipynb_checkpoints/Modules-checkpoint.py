@@ -116,8 +116,6 @@ class AdaptiveSpatioTemporalSelfAttention(nn.Module):
             self.mha_heads = channels // mha_head_channels
         
         self.norm_in = nn.GroupNorm(32, channels)
-        self.norm_out_spat = nn.GroupNorm(32, channels)
-        self.norm_out_temp = nn.GroupNorm(32, channels)
         if self.torch_mha:
             self.spatial_att =  nn.MultiheadAttention(channels, self.mha_heads, batch_first=True)
             if is_temporal:
@@ -145,52 +143,53 @@ class AdaptiveSpatioTemporalSelfAttention(nn.Module):
 
         self.norm_in.weight.copy_(base_spatial_attention.norm_in.weight)
         self.norm_in.bias.copy_(base_spatial_attention.norm_in.bias)
-        self.norm_out_spat.weight.copy_(base_spatial_attention.norm_out_spat.weight)
-        self.norm_out_spat.bias.copy_(base_spatial_attention.norm_out_spat.bias)
-
 
     def forward(self, x, temporal=True):
         b, c, *_, h, w = x.shape
         is_vid_data = x.ndim == 5
         temporal = temporal and is_vid_data
 
+        x = self.norm_in(x)
         if is_vid_data:
             x = rearrange(x, 'b c t h w -> (b t) (h w) c')
         else:
             x = rearrange(x, 'b c h w -> b (h w) c')
 
-        x = self.norm_in(x)
         if self.torch_mha:
-            h, _ = self.spatial_att(x, x, x)
+            att_out, _ = self.spatial_att(x, x, x)
         else:
-            h = h.swapaxes(-2, -1)
-            qkv = self.qkv(x)
-            h = self.att(qkv)
-            h = self.proj_out(h)
-            h = h.swapaxes(-1, -2)
-        x = self.norm_out_spat(self.scale*x + h)
+            att_out = x.swapaxes(-2, -1)
+            qkv = self.qkv(att_out)
+            att_out = self.att(qkv)
+            att_out = self.proj_out(att_out)
+            att_out = att_out.swapaxes(-1, -2)
+
+        x = self.scale*x + att_out
 
         if is_vid_data:
             x = rearrange(x, '(b t) (h w) c -> b c t h w', b = b, h = h, w = w)
         else:
             x = rearrange(x, 'b (h w) c -> b c h w', h = h, w = w)
 
-        if not temporal or not self._is_temporal:
+        x = nn.functional.group_norm(x, 32)
+
+        if not temporal or not self.is_temporal:
             return x
 
         x = rearrange(x, 'b c t h w -> (b h w) t c')
 
         if self.torch_mha:
-            h, _ = self.temp_att(x, x, x)
+            att_out, _ = self.temp_att(x, x, x)
         else:
-            h = h.swapaxes(-2, -1)
-            qkv = self.qkv(x)
-            h = self.att(qkv)
-            h = self.proj_out(h)
-            h = h.swapaxes(-1, -2)
+            att_out = x.swapaxes(-2, -1)
+            qkv = self.qkv(att_out)
+            att_out = self.att(qkv)
+            att_out = self.proj_out(att_out)
+            att_out = att_out.swapaxes(-1, -2)
 
-        x = self.norm_out_temp(self.scale*x + h)
+        x = self.scale*x + att_out
         x = rearrange(x, '(b h w) t c -> b c t h w', h = h, w = w)
+        x = nn.functional.group_norm(x, 32)
         return x
 
 
@@ -219,11 +218,12 @@ class Upsample2X(nn.Module):
 
     def forward(self, x):
         b = x.shape[0]
-        x = rearrange(x, 'b c t h w -> (b t) c h w') if x.ndim == 5 else x
+        temporal = x.ndim == 5
+        x = rearrange(x, 'b c t h w -> (b t) c h w') if temporal else x
         if self._use_conv:
             x = self._conv(x)
         x = self._sample(x)
-        return rearrange(x, '(b t) c h w -> b c t h w', b=b) if x.ndim == 5 else x
+        return rearrange(x, '(b t) c h w -> b c t h w', b=b) if temporal else x
 
 
 class Downsample2X(nn.Module):
@@ -239,9 +239,11 @@ class Downsample2X(nn.Module):
 
     def forward(self, x):
         b = x.shape[0]
-        x = rearrange(x, 'b c t h w -> (b t) c h w') if x.ndim == 5 else x
+        temporal = x.ndim == 5
+        x = rearrange(x, 'b c t h w -> (b t) c h w') if temporal else x
         x = self._sample(x)
-        return rearrange(x, '(b t) c h w -> b c t h w', b=b) if x.ndim == 5 else x
+        x = rearrange(x, '(b t) c h w -> b c t h w', b=b) if temporal else x
+        return x
 
 
 class SelfAttention(nn.Module):
@@ -265,7 +267,6 @@ class SelfAttention(nn.Module):
             self.mha_heads = channels // mha_head_channels
         
         self.norm_in = nn.GroupNorm(32, channels)
-        self.norm_out = nn.GroupNorm(32, channels)
         if self.torch_mha:
             self.att =  nn.MultiheadAttention(channels, self.mha_heads, batch_first=True)
         else:     
@@ -285,7 +286,7 @@ class SelfAttention(nn.Module):
             qkv = self.qkv(x)
             h = self.att(qkv)
             h = self.proj_out(h)
-        x = self.norm_out(self.scale*x + h)
+        x = nn.functional.group_norm(self.scale*x + h, 32)
         return x.reshape(b, c, *spatial)
 
 
@@ -347,9 +348,11 @@ class ResBlock(nn.Module):
 
     def forward(self, x, emb=None):
         mid_out = self._pre_concat_input(x)
+
         mid_out = self._sample(mid_out)
+
         mid_out = self.forward_conv(self._pre_concat_conv, mid_out)
-        
+
         if self._emb_size is not None:
             emb_out = self._emb_seq(emb)
             while len(emb_out.shape) < len(mid_out.shape):

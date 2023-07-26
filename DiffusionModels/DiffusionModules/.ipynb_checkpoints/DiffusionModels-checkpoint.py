@@ -1,8 +1,8 @@
 import torch
 import torch.nn as nn
-from DiffusionModules.Modules import MultiParamSequential, ResBlock, ResBlockSampleMode
-from DiffusionModules.Modules import SelfAttentionResBlock, zero_module
-
+from DiffusionModules.Modules import MultiParamSequential, ResBlock, ResBlockSampleMode, AdaptivePseudo3DConv
+from DiffusionModules.Modules import SelfAttentionResBlock, zero_module, AdaptiveSpatioTemporalResBlock, AdaptiveSpatioTemporalSelfAttentionResBlock
+import wandb
 
 # https://github.com/dome272/Diffusion-Models-pytorch/blob/main/modules.py
 class ExponentialMovingAverage():
@@ -41,7 +41,8 @@ class BasicUNet(nn.Module):
             mid_emb_size=mid_emb_size,
             out_channels=out_channels,
             device=device,
-            mha_head_channels=(64, 64, 64)
+            mha_head_channels=(64, 64, 64),
+            use_sample_conv=True
         )
 
     def forward(self, x, t_emb=None, i_emb=None):
@@ -59,10 +60,12 @@ class UpscalerUNet(nn.Module):
             device=device,
             in_channels=6,
             res_blocks_per_resolution=2,
-            mha_heads=(4, 4, 4),
+            #mha_heads=(4, 4, 4),
+            mha_head_channels=(64, 64, 64),
             base_channels=192, 
             base_channel_mults=(1, 1, 2, 2, 4, 4),
-            attention_at_downsample_factor=(8, 16, 32)
+            attention_at_downsample_factor=(8, 16, 32),
+            use_sample_conv=False
         )
 
     def forward(self, x, t_emb=None, i_emb=None):
@@ -84,7 +87,8 @@ class UNet(nn.Module):
         mid_emb_size=1024,
         in_channels=3,
         out_channels=6,
-        device=None
+        device=None,
+        use_sample_conv=True
     ):
         super().__init__()
 
@@ -102,6 +106,7 @@ class UNet(nn.Module):
         self._t_emb_size = t_emb_size
         self._mid_emb_size = mid_emb_size
         self._dropout = 0.1
+        self._use_sample_conv = use_sample_conv
 
         if t_emb_size is not None:
             self._time_emb_seq = nn.Sequential(
@@ -147,7 +152,8 @@ class UNet(nn.Module):
                         skip_con=True,
                         use_scale_shift_norm=self._use_res_block_scale_shift_norm,
                         mha_head_channels=curr_mha_head_channel,
-                        mha_heads=curr_mha_head
+                        mha_heads=curr_mha_head,
+                        use_sample_conv=use_sample_conv
                 )
             else:
                 get_block = lambda curr_ch_in: ResBlock(
@@ -156,7 +162,8 @@ class UNet(nn.Module):
                         emb_size=self._mid_emb_size,
                         dropout=self._dropout,
                         skip_con=True,
-                        use_scale_shift_norm=self._use_res_block_scale_shift_norm
+                        use_scale_shift_norm=self._use_res_block_scale_shift_norm,
+                        use_sample_conv=use_sample_conv
                 )
 
             layer_blocks = []
@@ -174,7 +181,8 @@ class UNet(nn.Module):
                         dropout=self._dropout,
                         skip_con=True,
                         use_scale_shift_norm=self._use_res_block_scale_shift_norm,
-                        sample_mode=ResBlockSampleMode.DOWNSAMPLE2X
+                        sample_mode=ResBlockSampleMode.DOWNSAMPLE2X,
+                        use_sample_conv=use_sample_conv
                 ))
                 channel_skip_dim.append(channels_out)
                 current_down_factor *= 2
@@ -187,7 +195,8 @@ class UNet(nn.Module):
                 emb_size=self._mid_emb_size,
                 dropout=self._dropout,
                 skip_con=True,
-                use_scale_shift_norm=self._use_res_block_scale_shift_norm
+                use_scale_shift_norm=self._use_res_block_scale_shift_norm,
+                use_sample_conv=use_sample_conv
             )
         )
 
@@ -207,7 +216,8 @@ class UNet(nn.Module):
                         skip_con=True,
                         use_scale_shift_norm=self._use_res_block_scale_shift_norm,
                         mha_head_channels=curr_mha_head_channel,
-                        mha_heads=curr_mha_head
+                        mha_heads=curr_mha_head,
+                        use_sample_conv=use_sample_conv
                 )
             else:
                 get_block = lambda curr_ch_in: ResBlock(
@@ -216,7 +226,8 @@ class UNet(nn.Module):
                         emb_size=self._mid_emb_size,
                         dropout=self._dropout,
                         skip_con=True,
-                        use_scale_shift_norm=self._use_res_block_scale_shift_norm
+                        use_scale_shift_norm=self._use_res_block_scale_shift_norm,
+                        use_sample_conv=use_sample_conv
                 )
 
             layer_blocks = []
@@ -235,7 +246,8 @@ class UNet(nn.Module):
                         dropout=self._dropout,
                         skip_con=True,
                         use_scale_shift_norm=self._use_res_block_scale_shift_norm,
-                        sample_mode=ResBlockSampleMode.UPSAMPLE2X
+                        sample_mode=ResBlockSampleMode.UPSAMPLE2X,
+                        use_sample_conv=use_sample_conv
                 ))
                 current_down_factor /= 2
 
@@ -249,23 +261,32 @@ class UNet(nn.Module):
             
             emb = i_emb + t_emb
 
+        wandb.log({"emb": emb})
+        wandb.log({"x": x})
         x = self._in_conv(x)
+        wandb.log({"xc1": x})
         outs = []
+        i = 0
         for block in self._down_blocks:
             x = block(x, emb)
+            wandb.log({f"xd_{i}": x})
             outs.append(x)
+            i += 1
 
         x = self._mid(x, emb)
 
+        i = 0
         for block in self._up_blocks:
             xp = outs.pop()
             x = torch.cat((xp, x), dim=1)
             x = block(x, emb)
+            wandb.log({f"xu_{i}": x})
+            i += 1
 
         return self._out_conv(x)
 
         
-class SpaceTimeUNet(nn.Module):
+class SpatioTemporalUNet(nn.Module):
     def __init__(
         self,
         base_channels=256,
@@ -297,6 +318,7 @@ class SpaceTimeUNet(nn.Module):
         self._use_res_block_scale_shift_norm = use_res_block_scale_shift_norm
         self._i_emb_size = i_emb_size
         self._t_emb_size = t_emb_size
+        self._f_emb_size = f_emb_size
         self._mid_emb_size = mid_emb_size
         self._dropout = 0.1
 
@@ -314,13 +336,19 @@ class SpaceTimeUNet(nn.Module):
                 nn.Linear(mid_emb_size, mid_emb_size)
             )
 
+        if f_emb_size is not None:
+            self._fps_emb_seq = nn.Sequential(
+                nn.Linear(f_emb_size, mid_emb_size),
+                nn.SiLU(),
+                nn.Linear(mid_emb_size, mid_emb_size)
+            )
 
-        self._in_conv = nn.Conv2d(self._in_channels, self._base_channels, stride=1, padding=1, kernel_size=3)
-        self._out_conv = nn.Sequential(
+        self._in_conv = AdaptivePseudo3DConv(self._in_channels, self._base_channels, stride=1, padding=1, kernel_size=3, temp_kernel_size=3)
+        self._pre_out_conv = nn.Sequential(
             nn.GroupNorm(32, self._base_channels),
-            nn.SiLU(),
-            zero_module(nn.Conv2d(self._base_channels, self._out_channels, stride=1, padding=1, kernel_size=3))
+            nn.SiLU()
         )
+        self._out_conv = zero_module(AdaptivePseudo3DConv(self._base_channels, self._out_channels, stride=1, padding=1, kernel_size=3, temp_kernel_size=3))
 
         self._down_blocks = nn.ModuleList()
         self._up_blocks = nn.ModuleList()
@@ -337,7 +365,7 @@ class SpaceTimeUNet(nn.Module):
                 curr_mha_head_channel = mha_head_channels[current_attention_block] if mha_head_channels is not None else None
                 curr_mha_head = mha_heads[current_attention_block] if mha_heads is not None and curr_mha_head_channel is None else None
                 current_attention_block += 1
-                get_block = lambda curr_ch_in: SelfAttentionResBlock(
+                get_block = lambda curr_ch_in: AdaptiveSpatioTemporalSelfAttentionResBlock(
                         in_channels=curr_ch_in,
                         out_channels=channels_out,
                         emb_size=self._mid_emb_size,
@@ -348,7 +376,7 @@ class SpaceTimeUNet(nn.Module):
                         mha_heads=curr_mha_head
                 )
             else:
-                get_block = lambda curr_ch_in: ResBlock(
+                get_block = lambda curr_ch_in: AdaptiveSpatioTemporalResBlock(
                         in_channels=curr_ch_in,
                         out_channels=channels_out,
                         emb_size=self._mid_emb_size,
@@ -365,7 +393,7 @@ class SpaceTimeUNet(nn.Module):
             self._down_blocks.append(MultiParamSequential(*layer_blocks))
 
             if i < len(base_channel_mults) - 1:
-                self._down_blocks.append(ResBlock(
+                self._down_blocks.append(AdaptiveSpatioTemporalResBlock(
                         in_channels=channels_in,
                         out_channels=channels_out,
                         emb_size=self._mid_emb_size,
@@ -379,7 +407,7 @@ class SpaceTimeUNet(nn.Module):
 
         self._mid = MultiParamSequential(
             get_block(channels_in),
-            ResBlock(
+            AdaptiveSpatioTemporalResBlock(
                 in_channels=channels_in,
                 out_channels=channels_out,
                 emb_size=self._mid_emb_size,
@@ -397,7 +425,7 @@ class SpaceTimeUNet(nn.Module):
                 current_attention_block -= 1
                 curr_mha_head_channel = mha_head_channels[current_attention_block] if mha_head_channels is not None else None
                 curr_mha_head = mha_heads[current_attention_block] if mha_heads is not None and curr_mha_head_channel is None else None
-                get_block = lambda curr_ch_in: SelfAttentionResBlock(
+                get_block = lambda curr_ch_in: AdaptiveSpatioTemporalSelfAttentionResBlock(
                         in_channels=curr_ch_in,
                         out_channels=channels_out,
                         emb_size=self._mid_emb_size,
@@ -408,7 +436,7 @@ class SpaceTimeUNet(nn.Module):
                         mha_heads=curr_mha_head
                 )
             else:
-                get_block = lambda curr_ch_in: ResBlock(
+                get_block = lambda curr_ch_in: AdaptiveSpatioTemporalResBlock(
                         in_channels=curr_ch_in,
                         out_channels=channels_out,
                         emb_size=self._mid_emb_size,
@@ -426,7 +454,7 @@ class SpaceTimeUNet(nn.Module):
 
             if i > 0:
                 added_channels = channel_skip_dim.pop()
-                self._up_blocks.append(ResBlock(
+                self._up_blocks.append(AdaptiveSpatioTemporalResBlock(
                         in_channels=channels_in + added_channels,
                         out_channels=channels_out,
                         emb_size=mid_emb_size,
@@ -437,27 +465,30 @@ class SpaceTimeUNet(nn.Module):
                 ))
                 current_down_factor /= 2
 
-    def forward(self, x, t_emb=None, i_emb=None):
-        if self._i_emb_size is None and self._t_emb_size is None:
+    def forward(self, x, t_emb=None, i_emb=None, f_emb=None, temporal=True):
+        if self._i_emb_size is None and self._t_emb_size is None and self._f_emb_size is None:
             emb = None
         else:
             zeros = torch.zeros(self._mid_emb_size).to(self._device)
             i_emb = zeros if i_emb is None else self._img_emb_seq(i_emb)
             t_emb = zeros if t_emb is None else self._time_emb_seq(t_emb)       
+            f_emb = zeros if f_emb is None else self._fps_emb_seq(f_emb)
             
-            emb = i_emb + t_emb
+            emb = i_emb + t_emb + f_emb
 
-        x = self._in_conv(x)
+        x = self._in_conv(x, temporal)
         outs = []
+        i = 0
         for block in self._down_blocks:
-            x = block(x, emb)
+            x = block(x, emb, temporal)
             outs.append(x)
+            i += 1
 
-        x = self._mid(x, emb)
+        x = self._mid(x, emb, temporal)
 
         for block in self._up_blocks:
             xp = outs.pop()
             x = torch.cat((xp, x), dim=1)
-            x = block(x, emb)
+            x = block(x, emb, temporal)
 
-        return self._out_conv(x)
+        return self._out_conv(self._pre_out_conv(x), temporal)

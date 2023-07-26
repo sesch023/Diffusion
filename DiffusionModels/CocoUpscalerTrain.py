@@ -27,13 +27,13 @@ torch.set_float32_matmul_precision('high')
 os.environ["TOKENIZERS_PARALLELISM"] = "true"
 os.environ["WDS_VERBOSE_CACHE"] = "1"
 
-gpus=[1]
-device = "cuda:1" if torch.cuda.is_available() else "cpu"
+gpus=[0]
+device = f"cuda:{str(gpus[0])}" if torch.cuda.is_available() else "cpu"
 unet = UpscalerUNet(device=device).to(device)
 summary(unet, [(1, 6, 256, 256), (1, 256), (1, 512)], verbose=1)
 wandb.init()
 wandb_logger = WandbLogger()
-batch_size = 8
+batch_size = 4
 wandb.save("*.py*")
 
 # url_train = "/home/shared-data/LAION-400M/laion400m-data/{00010..99999}.tar"
@@ -66,8 +66,8 @@ model = UpscalerDiffusionTrainer(
 
 lr_monitor = cb.LearningRateMonitor(logging_interval='epoch')
 trainer = pl.Trainer(
-    limit_train_batches=100, 
-    check_val_every_n_epoch=10, 
+    limit_train_batches=200, 
+    check_val_every_n_epoch=1000, 
     limit_val_batches=5, 
     num_sanity_val_steps=0, 
     max_epochs=10000, 

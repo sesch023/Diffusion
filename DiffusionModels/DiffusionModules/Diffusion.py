@@ -24,8 +24,7 @@ class ClipTools(nn.Module):
     def __init__(self, clip_model="ViT-B/32", device=None):
         super().__init__()
         self._device = ("cuda" if torch.cuda.is_available() else "cpu") if device is None else device
-        self._clip_model, self._clip_preprocess = clip.load(clip_model)
-        self._clip_model = self._clip_model.to(self._device)
+        self._clip_model, self._clip_preprocess = clip.load(clip_model, device=self._device)
         self._clip_model.eval()
     
     def get_clip_emb_size(self):
@@ -155,6 +154,7 @@ class DiffusionTools():
     def train_step(self, unet, loss, x_start, data_embs, x_unnoised_appendex=None, **unet_kwargs):
         ts = self.sample_timesteps(x_start.shape[0]).to(self._device)
         x_t, target = self.noise_data(x_start, ts)
+
         x_t_app = torch.cat((x_t, x_unnoised_appendex), dim=1) if x_unnoised_appendex is not None else x_t
         tse = torch.stack([self.get_pos_encoding(t) for t in ts]).to(self._device)
         out = unet(x_t_app, tse, data_embs, **unet_kwargs)
@@ -202,6 +202,28 @@ class DiffusionTools():
             gll_mean = gll.mean(dim=list(range(1, len(gll.shape)))) / np.log(2.0)
             
             loss_vlb = torch.where((ts == 0), gll_mean, k1_mean).mean()
+
+            #if self._step % 10 == 0:
+            #    try:
+            #        wandb.log(
+            #            {
+            #             "step": self._step,
+            #             "predicted": predicted, 
+            #             "model_mean'": model_mean, 
+            #             "model_log_var": model_log_variance, 
+            #             "model_var": model_var,
+            #             "posterior_mean": posterior_mean, 
+            #             "posterior_log_variance": posterior_log_variance,
+            #             "posterior_variance": torch.exp(posterior_log_variance),
+            #             "self._posterior_variance": self._posterior_variance,
+            #             "gll": gll,
+            #             "k1": k1,
+            #             "loss_vlb": loss_vlb
+            #            }
+            #        )
+            #    except:
+            #        pass
+
             out = predicted
         
         loss = loss(target, out) + self._variance_lambda * loss_vlb * self._steps

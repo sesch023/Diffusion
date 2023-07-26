@@ -172,17 +172,19 @@ class DiffusionTrainer(pl.LightningModule):
         captions = self.captions_preprocess(captions) if self.captions_preprocess is not None else captions    
         i_embs = self.alt_validation_emb_provider.get_embedding(images, captions).to(self.device)
         images = self.transformable_data_module.transform_batch(images).to(self.device)    
-        normal_sampled_images = self.diffusion_tools.sample_data(self.unet, images.shape, i_embs, self.cfg_scale)
-        ema_samples_images = self.diffusion_tools.sample_data(self.ema_unet, images.shape, i_embs, self.cfg_scale)
-        
-        self.save_sampled_images(normal_sampled_images, captions, batch_idx, "normal")
-        self.save_sampled_images(ema_samples_images, captions, batch_idx, "ema")
+        sampled_images = self.diffusion_tools.sample_data(self.unet, images.shape, i_embs, self.cfg_scale)
+        self.save_sampled_images(sampled_images, captions, batch_idx, "normal")
         if self.upscaler is not None and self.no_up_samples_out:
-            self.save_sampled_images(normal_sampled_images, captions, batch_idx, "normal_no_up", no_upscale=True)
-            self.save_sampled_images(ema_samples_images, captions, batch_idx, "ema_no_up", no_upscale=True)
-            
+            self.save_sampled_images(sampled_images, captions, batch_idx, "normal_no_up", no_upscale=True)
+
+        if self.ema is not None:
+            sampled_images = self.diffusion_tools.sample_data(self.ema_unet, images.shape, i_embs, self.cfg_scale)
+            self.save_sampled_images(sampled_images, captions, batch_idx, "ema")
+            if self.upscaler is not None and self.no_up_samples_out:
+                self.save_sampled_images(sampled_images, captions, batch_idx, "ema_no_up", no_upscale=True)
+        
         try:
-            val_score = self.val_score(ema_samples_images, images, captions)
+            val_score = self.val_score(sampled_images, images, captions)
         except RuntimeError as e:
             val_score = {"score": 0}
             print(f"Error with Score:  {e}")
@@ -213,7 +215,11 @@ class DiffusionTrainer(pl.LightningModule):
                 os.remove(self.prev_checkpoint)
             self.prev_checkpoint = path
             self.prev_checkpoint_val_avg = avg_loss
-            
+        
+        path = f"{self.sample_images_out_base_path}/latest.ckpt"
+        print(f"Saving Checkpoint at: {path}")
+        self.trainer.save_checkpoint(path)
+
         self.validation_step_outputs.clear() 
             
         
@@ -270,7 +276,7 @@ class UpscalerDiffusionTrainer(pl.LightningModule):
         self.cfg_train_ratio = cfg_train_ratio
         self.captions_preprocess = captions_preprocess
         self.sample_images_out_base_path = sample_images_out_base_path
-        self.optimizer = optim.AdamW(self.unet.parameters(), lr=3e-4, weight_decay=0.0) if optimizer is None else optimizer
+        self.optimizer = optim.AdamW(self.unet.parameters(), lr=3e-5, weight_decay=0.0) if optimizer is None else optimizer
         self.val_epoch = 0
         self.checkpoint_every_val_epochs = checkpoint_every_val_epochs
         self.prev_checkpoint = None
@@ -334,14 +340,17 @@ class UpscalerDiffusionTrainer(pl.LightningModule):
         low_res = torch.stack([self.transform_low_res(image).to(self.device) for image in images])   
         i_embs = self.alt_validation_emb_provider.get_embedding(images, captions).to(self.device)
         images = self.transformable_data_module.transform_batch(images).to(self.device)
-        normal_sampled_images = self.diffusion_tools.sample_data(self.unet, images.shape, i_embs, self.cfg_scale, x_appendex=low_res)
-        ema_samples_images = self.diffusion_tools.sample_data(self.ema_unet, images.shape, i_embs, self.cfg_scale, x_appendex=low_res)
+        sampled_images = self.diffusion_tools.sample_data(self.unet, images.shape, i_embs, self.cfg_scale, x_appendex=low_res)
+        self.save_sampled_images(sampled_images, captions, batch_idx, "normal") 
 
-        self.save_sampled_images(normal_sampled_images, captions, batch_idx, "normal")
-        self.save_sampled_images(ema_samples_images, captions, batch_idx, "ema")
+        if self.ema is not None:
+            sampled_images = self.diffusion_tools.sample_data(self.ema_unet, images.shape, i_embs, self.cfg_scale, x_appendex=low_res)
+            self.save_sampled_images(sampled_images, captions, batch_idx, "ema")
+
         self.save_sampled_images(low_res, captions, batch_idx, "low_res")
+        
         try:
-            val_score = self.val_score(ema_samples_images, images, captions)
+            val_score = self.val_score(sampled_images, images, captions)
         except RuntimeError as e:
             val_score = {"score": 0}
             print(f"Error with Score:  {e}")
@@ -372,7 +381,11 @@ class UpscalerDiffusionTrainer(pl.LightningModule):
                 os.remove(self.prev_checkpoint)
             self.prev_checkpoint = path
             self.prev_checkpoint_val_avg = avg_loss
-            
+        
+        path = f"{self.sample_images_out_base_path}/latest.ckpt"
+        print(f"Saving Checkpoint at: {path}")
+        self.trainer.save_checkpoint(path)
+
         self.validation_step_outputs.clear() 
             
         
@@ -420,7 +433,9 @@ class VideoDiffusionTrainer(pl.LightningModule):
         loss=None, 
         val_score=None, 
         embedding_provider=None, 
+        temporal_embedding_provider=None,
         alt_validation_emb_provider=None, 
+        alt_validation_temporal_emb_provider=None,
         ema_beta=0.9999, 
         cfg_train_ratio=0.1, 
         cfg_scale=3, 
@@ -435,7 +450,9 @@ class VideoDiffusionTrainer(pl.LightningModule):
         self.video_transformable_data_module = video_transformable_data_module
         self.loss = nn.MSELoss() if loss is None else loss
         self.embedding_provider = ClipEmbeddingProvider() if embedding_provider is None else embedding_provider
+        self.temporal_embedding_provider = ClipVideoEmbeddingProvider() if temporal_embedding_provider is None else temporal_embedding_provider
         self.alt_validation_emb_provider = self.embedding_provider if alt_validation_emb_provider is None else alt_validation_emb_provider
+        self.alt_validation_temporal_emb_provider = self.temporal_embedding_provider if alt_validation_temporal_emb_provider is None else alt_validation_temporal_emb_provider
         self.cfg_scale = cfg_scale
         self.cfg_train_ratio = cfg_train_ratio
         self.captions_preprocess = captions_preprocess
@@ -478,11 +495,12 @@ class VideoDiffusionTrainer(pl.LightningModule):
         videos, captions, lengths, fps = batch["video"], batch["caption"], batch["length"], batch["fps"]
         captions = self.captions_preprocess(captions) if self.captions_preprocess is not None else captions
         if torch.rand(1)[0] > self.cfg_train_ratio:
-            i_embs = self.embedding_provider.get_embedding(videos, captions).to(self.device)
+            i_embs = self.temporal_embedding_provider.get_embedding(videos, captions).to(self.device)
         else:
             i_embs = None
-        images = self.transformable_data_module.transform_batch(videos).to(self.device)      
-        loss = self.diffusion_tools.train_step(self.unet, self.loss, images, i_embs)
+        images = self.transformable_data_module.transform_batch(videos).to(self.device)  
+        f_emb = self.diffusion_tools.get_pos_encoding(fps)    
+        loss = self.diffusion_tools.train_step(self.unet, self.loss, images, i_embs, f_emb=f_emb, temporal=True)
        
         self.log("train_loss", loss, on_step=False, on_epoch=True, prog_bar=True, batch_size=images.shape[0])
         return loss
@@ -537,7 +555,11 @@ class VideoDiffusionTrainer(pl.LightningModule):
                 os.remove(self.prev_checkpoint)
             self.prev_checkpoint = path
             self.prev_checkpoint_val_avg = avg_loss
-            
+        
+        path = f"{self.sample_images_out_base_path}/latest.ckpt"
+        print(f"Saving Checkpoint at: {path}")
+        self.trainer.save_checkpoint(path)
+
         self.validation_step_outputs.clear() 
             
         

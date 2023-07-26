@@ -9,34 +9,57 @@ import functools
 from enum import Enum
 from WebvidReader.VideoDataset import VideoDataset
 import webdataset as wds
-from torch.nn.utils.rnn import pad_packed_sequence
+from torch.nn.utils.rnn import pad_packed_sequence, pad_sequence, pack_padded_sequence
 from einops import rearrange
 from torch.utils.data import DataLoader
+from collections import OrderedDict
+
 
 class CollateTypeFunction():
-    @staticmethod
-    def cnd(data):
-        data = list(filter(lambda x: x[0] is not None and x[1] is not None, data))
-        images = [e[0] for e in data]
-        captions = [e[1] for e in data]
-        return {"image": images, "caption": captions}
+    standard_collations = OrderedDict(((0, "image"), (1, "caption")))
+    standard_collations_with_fps = OrderedDict(((0, "image"), (1, "caption"), (2, "fps")))
 
     @staticmethod
-    def cnt(data):
-        data = list(filter(lambda x: x[0] is not None and x[1] is not None, data))
-        images = [e[0] for e in data]
-        captions = [e[1] for e in data]
-        return images, captions
+    def additional_collate_none(data, collations=None):
+        if collations is None:
+            collations = CollateTypeFunction.standard_collations
 
+        def filter_none(item, collations):
+            valid = True
+            for key in collations.keys():
+                if item[key] is None:
+                    valid = False
+                    break
+            return valid
+
+        filtered_data = list(filter(lambda x: filter_none(x, collations), data))
+        return {collations[key]: [e[key] for e in filtered_data] for key in collations.keys()}
+
+    @staticmethod
+    def cnd(data, collations=None):
+        data = CollateTypeFunction.additional_collate_none(data, collations)
+        return data
+
+    @staticmethod
+    def cnt(data, collations=None):
+        data = CollateTypeFunction.additional_collate_none(data, collations)
+        return tuple(data.values())
+        
     @staticmethod
     def ci(data):
         return data
 
     @staticmethod
-    def cndps(data, padding_value=-1):
-        data, captions = CollateTypeFunction.cnd(data)
-        video, lengths = pad_packed_sequence(data, padding_value=padding_value, batch_first=True)
-        return { "video": video, "caption": captions, "length": lengths, "fps": None }
+    def cndps(data, padding_value=-1, collations=None, total_length=None):
+        if collations is None:
+            collations = CollateTypeFunction.standard_collations_with_fps
+        print(data)
+        data, captions, fps = CollateTypeFunction.cnt(data, collations)
+        lengths = torch.tensor([len(e) for e in data])
+        
+        data = pad_sequence(data, padding_value=padding_value, batch_first=True)
+        video = pack_padded_sequence(data, lengths, batch_first=True)
+        return { "video": video, "caption": captions, "length": lengths, "fps": fps }
 
 
 collate_type_to_function = {
@@ -173,7 +196,11 @@ class VideoDatasetDataModule(TransformableDataModule):
         batch_size=16, 
         num_workers=4, 
         target_resolution=(64, 64),
-        padding_value=-1
+        padding_value=-1,
+        nth_frames=10,
+        max_frames_per_part=16,
+        min_frames_per_part=8,
+        first_part_only=True
     ):
         super(VideoDatasetDataModule, self).__init__()
         self.batch_size = batch_size
@@ -184,23 +211,29 @@ class VideoDatasetDataModule(TransformableDataModule):
         self.num_workers = num_workers
         self.target_resolution = target_resolution
         self.padding_value = padding_value
+        self.nth_frames = nth_frames
+        self.max_frames_per_part = max_frames_per_part
         self.t_data = VideoDataset(
             self.train_csv_path, 
             self.train_data_path, 
             target_resolution=self.target_resolution, 
-            channels_first=False,
-            max_frames_per_part=16,
-            nth_frames=10
+            channels_first=True,
+            max_frames_per_part=self.max_frames_per_part,
+            nth_frames=self.nth_frames,
+            first_part_only=first_part_only,
+            min_frames_per_part=min_frames_per_part
         )
         self.v_data = VideoDataset(
             self.val_csv_path, 
             self.val_data_path, 
             target_resolution=self.target_resolution, 
-            channels_first=False,
-            max_frames_per_part=16,
-            nth_frames=10
+            channels_first=True,
+            max_frames_per_part=self.max_frames_per_part,
+            nth_frames=self.nth_frames,
+            first_part_only=first_part_only,
+            min_frames_per_part=min_frames_per_part
         )
-        self.collate = lambda data: CollateTypeFunction.cndps(data, padding_value=self.padding_value)
+        self.collate = lambda data: CollateTypeFunction.cndps(data, padding_value=self.padding_value, total_length=self.max_frames_per_part)
 
     def train_dataloader(self):
         return DataLoader(
