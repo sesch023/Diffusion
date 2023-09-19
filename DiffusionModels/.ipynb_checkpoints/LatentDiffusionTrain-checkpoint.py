@@ -151,6 +151,7 @@ model = LatentDiffusionTrainer(
     checkpoint_every_val_epochs=1,
     embedding_provider=ClipEmbeddingProvider(clip_tools=clip_tools),
     # alt_validation_emb_provider=ClipTranslatorEmbeddingProvider(clip_tools=clip_tools, translator_model_path=translator_model_path)
+    quantize_after_sample=False
 )
 
 lr_monitor = cb.LearningRateMonitor(logging_interval='epoch')

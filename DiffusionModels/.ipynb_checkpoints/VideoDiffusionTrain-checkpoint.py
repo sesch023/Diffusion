@@ -23,15 +23,13 @@ torch.set_float32_matmul_precision('high')
 os.environ["TOKENIZERS_PARALLELISM"] = "true"
 os.environ["WDS_VERBOSE_CACHE"] = "1"
 
-gpus=[1]
+gpus=[0]
 device = f"cuda:{str(gpus[0])}" if torch.cuda.is_available() else "cpu"
-device = "cpu"
-unet = BasicUNet(device=device).to(device)
 wandb.init()
 wandb_logger = WandbLogger()
 batch_size = 2
 wandb.save("*.py*")
-
+print(device)
 
 unet_in_channels = 3
 unet_in_size = 64
@@ -52,28 +50,30 @@ unet = SpatioTemporalUNet(
     device=device
 ).to(device)
 
-summary(unet, [(1, unet_in_channels, 32, 64, 64), (1, 256), (1, 512), (1, 256)], verbose=1)
+summary(unet, [(1, unet_in_channels, 16, 64, 64), (1, 256), (1, 512), (1, 256)], verbose=1)
 
 dataset = VideoDatasetDataModule(
-    # "/home/archive/Webvid/webvid_2M/results_2M_train.csv", 
-    # "/home/archive/Webvid/webvid_2M/data/videos", 
-    "/home/archive/Webvid/webvid_2M/results_2M_val.csv", 
-    "/home/archive/Webvid/webvid_2M/data_val/videos",
-    "/home/archive/Webvid/webvid_2M/results_2M_val.csv", 
-    "/home/archive/Webvid/webvid_2M/data_val/videos",
+    #"/home/shared-data/webvid/results_10M_train.csv", 
+    #"/home/shared-data/webvid/data/videos",
+    "/home/shared-data/webvid/results_10M_val.csv", 
+    "/home/shared-data/webvid/data_val/videos",
+    "/home/shared-data/webvid/results_10M_val.csv", 
+    "/home/shared-data/webvid/data_val/videos",
     batch_size=batch_size,
     num_workers=4,
-    nth_frames=10,
-    max_frames_per_part=16
+    nth_frames=5,
+    max_frames_per_part=16,
+    min_frames_per_part=4,
+    first_part_only=True
 )
 
 captions_preprocess = lambda captions: [cap[:77] for cap in captions]
 
 clip_tools = ClipTools(device=device)
 translator_model_path = "clip_translator/model.ckpt"
-sample_images_out_base_path="samples_video/"
-old_checkpoint = glob.glob(f"{sample_images_out_base_path}/latest.ckpt")
-old_checkpoint = old_checkpoint if len(old_checkpoint) > 0 else glob.glob(f"{sample_images_out_base_path}/*.ckpt")
+sample_videos_out_base_path="samples_video/"
+old_checkpoint = glob.glob(f"{sample_videos_out_base_path}/latest.ckpt")
+old_checkpoint = old_checkpoint if len(old_checkpoint) > 0 else glob.glob(f"{sample_videos_out_base_path}/*.ckpt")
 resume_from_checkpoint = None if not resume_from_checkpoint else old_checkpoint[0] if len(old_checkpoint) > 0 else None
 
 model = VideoDiffusionTrainer(
@@ -81,7 +81,7 @@ model = VideoDiffusionTrainer(
     video_transformable_data_module=dataset,
     diffusion_tools=DiffusionTools(device=device, steps=1000, noise_scheduler=LinearScheduler()), 
     captions_preprocess=captions_preprocess,
-    sample_images_out_base_path=sample_images_out_base_path,
+    sample_videos_out_base_path=sample_videos_out_base_path,
     checkpoint_every_val_epochs=1,
     embedding_provider=ClipEmbeddingProvider(clip_tools=clip_tools),
     temporal_embedding_provider=ClipVideoEmbeddingProvider(clip_tools=clip_tools)
@@ -91,7 +91,7 @@ lr_monitor = cb.LearningRateMonitor(logging_interval='epoch')
 trainer = pl.Trainer(
     limit_train_batches=200, 
     check_val_every_n_epoch=200, 
-    limit_val_batches=5, 
+    limit_val_batches=2, 
     num_sanity_val_steps=0, 
     max_epochs=30000, 
     logger=wandb_logger, 

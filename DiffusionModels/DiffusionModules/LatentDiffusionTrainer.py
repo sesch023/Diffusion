@@ -46,7 +46,8 @@ class LatentDiffusionTrainer(pl.LightningModule):
         cfg_scale=3, 
         captions_preprocess=None, 
         optimizer=None, 
-        checkpoint_every_val_epochs=10, 
+        checkpoint_every_val_epochs=10,
+        quantize_after_sample=True,
         sample_images_out_base_path="samples/"):
         super().__init__()
         self.unet = unet
@@ -68,6 +69,7 @@ class LatentDiffusionTrainer(pl.LightningModule):
         self.validation_step_outputs = []
         self.save_images = lambda image, path: ImageLoader.save_image(image, path)
         self.latent_shape = latent_shape
+        self.quantize_after_sample = quantize_after_sample
         
         if ema_beta is not None:   
             self.ema = ExponentialMovingAverage(ema_beta)
@@ -122,15 +124,17 @@ class LatentDiffusionTrainer(pl.LightningModule):
         images = self.transformable_data_module.transform_batch(images).to(self.device)    
 
         latent_batch_shape = (images.shape[0], *self.latent_shape)
-        normal_sampled_latents = self.diffusion_tools.sample_data(self.unet, latent_batch_shape, i_embs, self.cfg_scale)
-        quant_normal_sampled_latents, _, _ = self.vqgan.quantize(normal_sampled_latents)
-        samples_images = self.vqgan.decode(quant_normal_sampled_latents, emb=i_embs, clamp=True)
+        sampled_latents = self.diffusion_tools.sample_data(self.unet, latent_batch_shape, i_embs, self.cfg_scale)
+        if self.quantize_after_sample:
+            sampled_latents, _, _ = self.vqgan.quantize(sampled_latents)
+        samples_images = self.vqgan.decode(sampled_latents, emb=i_embs, clamp=True)
         self.save_sampled_images(samples_images, captions, batch_idx, "normal")
 
         if self.ema is not None:
             ema_sampled_latents = self.diffusion_tools.sample_data(self.ema_unet, latent_batch_shape, i_embs, self.cfg_scale)
-            quant_ema_sampled_latents, _, _ = self.vqgan.quantize(ema_sampled_latents)
-            samples_images = self.vqgan.decode(quant_ema_sampled_latents, emb=i_embs, clamp=True)
+            if self.quantize_after_sample:
+                ema_sampled_latents, _, _ = self.vqgan.quantize(ema_sampled_latents)
+            samples_images = self.vqgan.decode(ema_sampled_latents, emb=i_embs, clamp=True)
             self.save_sampled_images(samples_images, captions, batch_idx, "ema")
             
         try:
@@ -165,7 +169,10 @@ class LatentDiffusionTrainer(pl.LightningModule):
                 os.remove(self.prev_checkpoint)
             self.prev_checkpoint = path
             self.prev_checkpoint_val_avg = avg_loss
-            
+        
+        path = f"{self.sample_images_out_base_path}/latest.ckpt"
+        print(f"Saving Checkpoint at: {path}")
+        self.trainer.save_checkpoint(path)
         self.validation_step_outputs.clear() 
             
         

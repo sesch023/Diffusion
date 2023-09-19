@@ -99,6 +99,8 @@ class VarianceMode(Enum):
     LEARNED = "LEARNED",
     LEARNED_SCALE = "LEARNED_SCALE"
     
+DEBUG = False
+
 class DiffusionTools():
     # TODO: Über Steps nachdenken
     def __init__(
@@ -131,7 +133,7 @@ class DiffusionTools():
         self._posterior_mean_coef_2 = (1 - self._alphas_cum_prev) * torch.sqrt(self._alphas) / (1.0 - self._alphas_cum) 
         self._sqrt_recip_alphas_cumprod = torch.sqrt(1.0 / self._alphas_cum)
         self._sqrt_recipm1_alphas_cumprod = torch.sqrt(1.0 / self._alphas_cum - 1)
-        
+
         self._step = 0
     
     def get_pos_encoding(self, t, m=10000):
@@ -201,8 +203,30 @@ class DiffusionTools():
             gll_mean = gll.mean(dim=list(range(1, len(gll.shape)))) / np.log(2.0)
             
             loss_vlb = torch.where((ts == 0), gll_mean, k1_mean).mean()
+
+            if DEBUG and self._step % 10 == 0:
+                try:
+                    wandb.log(
+                        {
+                         "step": self._step,
+                         "predicted": predicted, 
+                         "model_mean'": model_mean, 
+                         "model_log_var": model_log_variance, 
+                         "model_var": model_var,
+                         "posterior_mean": posterior_mean, 
+                         "posterior_log_variance": posterior_log_variance,
+                         "posterior_variance": torch.exp(posterior_log_variance),
+                         "self._posterior_variance": self._posterior_variance,
+                         "gll": gll,
+                         "k1": k1,
+                         "loss_vlb": loss_vlb
+                        }
+                    )
+                except:
+                    pass
+
             out = predicted
-        
+
         loss = loss(target, out) + self._variance_lambda * loss_vlb * self._steps
             
         return loss
@@ -210,7 +234,7 @@ class DiffusionTools():
     def sample_timesteps(self, num):
         return torch.randint(low=0, high=self._steps, size=(num,))
     
-    def sample_data(self, model, sample_shape, data_embs=None, cfg_scale=3, x_appendex=None, **unet_kwargs):
+    def sample_data(self, model, sample_shape, data_embs=None, cfg_scale=3, x_appendex=None, clamp_var=False, **unet_kwargs):
         # https://github.com/dome272/Diffusion-Models-pytorch/blob/main/ddpm.py
         model.eval()
         with torch.no_grad():
@@ -225,7 +249,7 @@ class DiffusionTools():
                 if cfg_scale > 0:
                     uncondtional_pred = model(x_t_app, tse, None)
                     pred = torch.lerp(uncondtional_pred, pred, cfg_scale)
-                                   
+                                
                 alphas = equalize_shape_of_first(self._alphas[ts], x_t)
                 alphas_cum = equalize_shape_of_first(self._alphas_cum[ts], x_t)
                 noise_schedule = equalize_shape_of_first(self._schedule[ts], x_t)
@@ -248,7 +272,10 @@ class DiffusionTools():
                     else:
                         log_schedule = equalize_shape_of_first(torch.log(self._schedule)[ts], x_t)
                         # Output is [-1, 1] -> Normalize to [0, 1]
-                        # model_var = torch.clamp(model_var, -2.0, 2.0)
+
+                        if clamp_var:
+                            model_var = torch.clamp(model_var, -2.0, 2.0)
+
                         model_var = (model_var + 1) / 2
                         model_log_variance = model_var * log_schedule + (1 - model_var) * posterior_log_variance
                         
@@ -264,9 +291,24 @@ class DiffusionTools():
                     model_mean = (1 / torch.sqrt(alphas)) * (x_t - (noise_schedule / (torch.sqrt(1 - alphas_cum))) * pred)
                     
                 x_t = model_mean + x_var
+
+                if DEBUG:
+                    wandb.log(
+                        {
+                            "sam_step": self._step*1000+i,
+                            "val_predicted": predicted, 
+                            "val_model_mean'": model_mean, 
+                            "val_model_log_var": model_log_variance, 
+                            "val_model_var": model_var,
+                            "val_posterior_mean_1": mean_coef_1, 
+                            "val_posterior_mean_2": mean_coef_2, 
+                            "val_posterior_log_variance": posterior_log_variance,
+                            "val_posterior_variance": torch.exp(posterior_log_variance)
+                        }
+                    )
                 
         model.train()
-        
+
         print(torch.min(x_t), torch.max(x_t), torch.mean(x_t))
         x_t = x_t.clamp(-1, 1)
         return x_t

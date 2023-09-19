@@ -26,6 +26,8 @@ from DiffusionModules.Diffusion import *
 from DiffusionModules.DiffusionModels import ExponentialMovingAverage
 from DiffusionModules.Util import *
 from DiffusionModules.DataModules import CIFAR10DataModule
+from DiffusionModules.ModelLoading import load_udm
+from einops import rearrange
 
 sys.modules['ClipTranslatorModules'] = tools
 
@@ -68,7 +70,8 @@ class ClipVideoEmbeddingProvider(BaseEmbeddingProvider):
         self.clip_tools = ClipTools() if clip_tools is None else clip_tools
 
     def get_embedding(self, videos, labels):
-        v_embs = self.clip_tools.get_clip_emb_videos(videos)    
+        # Use Captions for now
+        v_embs = self.clip_tools.get_clip_emb_text(labels)    
         return v_embs
 
     
@@ -89,7 +92,7 @@ class UpscalerMode(Enum):
     LDM="LDM"
     
 class DiffusionTrainer(pl.LightningModule):
-    def __init__(self, unet, diffusion_tools, transformable_data_module, loss=None, val_score=None, embedding_provider=None, alt_validation_emb_provider=None, ema_beta=0.9999, cfg_train_ratio=0.1, cfg_scale=3, captions_preprocess=None, optimizer=None, sample_upscaler_mode=UpscalerMode.LDM, sample_scale_factor=4, checkpoint_every_val_epochs=10, no_up_samples_out=True, sample_images_out_base_path="samples/"):
+    def __init__(self, unet, diffusion_tools, transformable_data_module, loss=None, val_score=None, embedding_provider=None, alt_validation_emb_provider=None, ema_beta=0.9999, cfg_train_ratio=0.1, cfg_scale=3, captions_preprocess=None, optimizer=None, sample_upscaler_mode=UpscalerMode.LDM, sample_scale_factor=4, checkpoint_every_val_epochs=10, no_up_samples_out=True, sample_images_out_base_path="samples/", c_device="cpu"):
         super().__init__()
         self.unet = unet
         self.diffusion_tools = diffusion_tools
@@ -111,17 +114,25 @@ class DiffusionTrainer(pl.LightningModule):
         self.validation_step_outputs = []
         self.save_images = lambda image, path: ImageLoader.save_image(image, path)
         self.no_up_samples_out = no_up_samples_out
+        self.c_device = c_device
         
         self.upscaler = None
         if self.sample_upscaler_mode is not None and self.sample_upscaler_mode != UpscalerMode.NONE:
             if self.sample_upscaler_mode == UpscalerMode.DRLN:
                 self.up_model_pipeline = DrlnModel.from_pretrained('eugenesiow/drln', scale=sample_scale_factor)
-                self.upscaler = lambda image: self.up_model_pipeline(image).detach().cpu()      
+                self.upscaler = lambda image, caption: self.up_model_pipeline(ImageLoader.load_image(image).to(self.device)).detach().to(self.c_device)     
                 self.save_images = lambda image, path: ImageLoader.save_image(image, path)
             elif self.sample_upscaler_mode == UpscalerMode.LDM:
                 model_id = "CompVis/ldm-super-resolution-4x-openimages"
-                self.up_model_pipeline = LDMSuperResolutionPipeline.from_pretrained(model_id)
-                self.upscaler = lambda image: self.up_model_pipeline(image, num_inference_steps=100, eta=1).images[0]
+                self.up_model_pipeline = LDMSuperResolutionPipeline.from_pretrained(model_id).to(self.c_device)
+                self.upscaler = lambda image, caption: self.up_model_pipeline(ImageLoader.load_image(image).to(self.device), num_inference_steps=100, eta=1).images[0].detach().cpu() 
+                self.save_images = lambda image, path: image.save(path)
+            # This should later Change to a Enum value, but changing a enum with pickled models does not work and results in load errors.
+            elif self.sample_upscaler_mode == "UDM":
+                model_path = "~/upscaler.ckpt"
+                self.up_model_pipeline = load_udm(model_path, self.c_device, self.transformable_data_module.img_in_target_size*sample_scale_factor)
+                self.up_model_pipeline.eval()
+                self.upscaler = lambda image, caption: self.up_model_pipeline([image], [caption], ema=True)[0]
                 self.save_images = lambda image, path: image.save(path)
         
         if ema_beta is not None:   
@@ -157,7 +168,7 @@ class DiffusionTrainer(pl.LightningModule):
             i_embs = self.embedding_provider.get_embedding(images, captions).to(self.device)
         else:
             i_embs = None
-        images = self.transformable_data_module.transform_batch(images).to(self.device)      
+        images = self.transformable_data_module.transform_batch(images).to(self.device)  
         loss = self.diffusion_tools.train_step(self.unet, self.loss, images, i_embs)
        
         self.log("train_loss", loss, on_step=False, on_epoch=True, prog_bar=True, batch_size=images.shape[0])
@@ -236,8 +247,7 @@ class DiffusionTrainer(pl.LightningModule):
         sampled_images = self.transformable_data_module.reverse_transform_batch(sampled_images.detach().cpu())
             
         if self.upscaler is not None and not no_upscale:
-            sampled_images = [ImageLoader.load_image(image) for image in sampled_images]
-            sampled_images = [self.upscaler(image.to(self.device)) for image in sampled_images]
+            sampled_images = [self.upscaler(image, caption) for image, caption in zip(sampled_images, captions)]
             
         for image_id in range(len(sampled_images)):
             self.save_images(sampled_images[image_id], path_folder + f"img_{image_id}.png")
@@ -314,7 +324,17 @@ class UpscalerDiffusionTrainer(pl.LightningModule):
             
         self.save_hyperparameters(ignore=["embedding_provider", "unet"])
         
-    
+
+    def forward(self, images, captions, ema=True):
+        model = self.ema_unet if ema and self.ema is not None else self.unet
+        captions = self.captions_preprocess(captions) if self.captions_preprocess is not None else captions
+        i_embs = self.alt_validation_emb_provider.get_embedding(images, captions).to(self.device)
+        low_res = torch.stack([self.transform_low_res(image) for image in images]).to(self.device)
+        sampled_images = self.diffusion_tools.sample_data(model, low_res.shape, i_embs, self.cfg_scale, x_appendex=low_res)
+        sampled_images = self.transformable_data_module.reverse_transform_batch(sampled_images.detach().cpu())
+        return sampled_images
+
+
     def training_step(self, batch, batch_idx):
         images, captions = batch
         captions = self.captions_preprocess(captions) if self.captions_preprocess is not None else captions
@@ -424,12 +444,12 @@ class UpscalerDiffusionTrainer(pl.LightningModule):
         }
 
 
-class VideoDiffusionTrainer(pl.LightningModule):
+class SpatioTemporalDiffusionTrainer(pl.LightningModule):
     def __init__(
         self, 
         unet, 
         diffusion_tools, 
-        video_transformable_data_module, 
+        transformable_data_module, 
         loss=None, 
         val_score=None, 
         embedding_provider=None, 
@@ -442,12 +462,14 @@ class VideoDiffusionTrainer(pl.LightningModule):
         captions_preprocess=None, 
         optimizer=None, 
         checkpoint_every_val_epochs=10, 
-        sample_images_out_base_path="samples/"
+        sample_data_out_base_path="samples_spatio_temporal/",
+        disable_temporal_caption_embs=True,
+        temporal=True
     ):
         super().__init__()
         self.unet = unet
         self.diffusion_tools = diffusion_tools
-        self.video_transformable_data_module = video_transformable_data_module
+        self.transformable_data_module = transformable_data_module
         self.loss = nn.MSELoss() if loss is None else loss
         self.embedding_provider = ClipEmbeddingProvider() if embedding_provider is None else embedding_provider
         self.temporal_embedding_provider = ClipVideoEmbeddingProvider() if temporal_embedding_provider is None else temporal_embedding_provider
@@ -456,14 +478,17 @@ class VideoDiffusionTrainer(pl.LightningModule):
         self.cfg_scale = cfg_scale
         self.cfg_train_ratio = cfg_train_ratio
         self.captions_preprocess = captions_preprocess
-        self.sample_images_out_base_path = sample_images_out_base_path
-        self.optimizer = optim.AdamW(self.unet.parameters(), lr=3e-4, weight_decay=0.0) if optimizer is None else optimizer
+        self.sample_data_out_base_path = sample_data_out_base_path
+        self.optimizer = optim.AdamW(self.unet.parameters(), lr=3e-5, weight_decay=0.0) if optimizer is None else optimizer
         self.val_epoch = 0
         self.checkpoint_every_val_epochs = checkpoint_every_val_epochs
         self.prev_checkpoint = None
         self.prev_checkpoint_val_avg = float("inf")
         self.validation_step_outputs = []
-        self.save_images = lambda video, path: self.video_transformable_data_module.t_data.write_video(video, path)
+        self.temporal = temporal
+        self.save_videos= lambda video, path: self.transformable_data_module.t_data.write_video(video, path)
+        self.save_images = lambda image, path: image.save(path)
+        self.disable_temporal_caption_embs = disable_temporal_caption_embs
         
         if ema_beta is not None:   
             self.ema = ExponentialMovingAverage(ema_beta)
@@ -473,36 +498,66 @@ class VideoDiffusionTrainer(pl.LightningModule):
         
         if val_score is None:
             self.fid = FrechetInceptionDistance(feature=64)
-            
-            def get_fid_score(samples, real):
-                self.fid.update((((samples + 1)/2)*255).byte(), real=False)
-                self.fid.update((((real + 1)/2)*255).byte(), real=True)
-                return self.fid.compute()
-            
             self.clip_model = CLIPScore(model_name_or_path="openai/clip-vit-base-patch32").eval()
-            
+
             self.val_score = lambda samples, real, captions: {
-                "clip_score": self.clip_model((((samples + 1)/2)*255).int(), captions),
-                "fid_score": get_fid_score(samples, real)
+                "clip_score": self.get_clip_score(samples, captions),
+                "fid_score": self.get_fid_score(samples, real)
             }
         else:
             self.val_score = val_score
             
         self.save_hyperparameters(ignore=["embedding_provider", "unet"])
         
+    def get_fid_score(self, s_data, r_data):
+        if s_data.ndim == 5:
+            s_data = rearrange(s_data, 'b c t h w -> (b t) c h w')
+            r_data = rearrange(r_data, 'b c t h w -> (b t) c h w')
+
+        self.fid.update((((s_data + 1)/2)*255).byte(), real=False)
+        self.fid.update((((r_data + 1)/2)*255).byte(), real=True)
     
-    def training_step(self, batch, batch_idx):
-        videos, captions, lengths, fps = batch["video"], batch["caption"], batch["length"], batch["fps"]
-        captions = self.captions_preprocess(captions) if self.captions_preprocess is not None else captions
-        if torch.rand(1)[0] > self.cfg_train_ratio:
-            i_embs = self.temporal_embedding_provider.get_embedding(videos, captions).to(self.device)
+        return self.fid.compute()
+
+    def get_clip_score(self, s_data, captions):
+        scores = []
+        if s_data.ndim == 4:
+            s_data = rearrange(s_data, 'b c h w -> b 1 c h w')
         else:
-            i_embs = None
-        images = self.transformable_data_module.transform_batch(videos).to(self.device)  
-        f_emb = self.diffusion_tools.get_pos_encoding(fps)    
-        loss = self.diffusion_tools.train_step(self.unet, self.loss, images, i_embs, f_emb=f_emb, temporal=True)
+            s_data = rearrange(s_data, 'b c t h w -> b t c h w')
+            
+        for b_id in range(s_data.shape[0]):
+            for f_id in range(s_data.shape[1]):
+                score = self.clip_model((((s_data[b_id][f_id] + 1)/2)*255).int(), captions[b_id])
+                scores.append(score)
+
+        return sum(scores) / len(scores)
+
+    def training_step(self, batch, batch_idx):
+        data, captions, *other = batch  
+        fps = other[1] if len(other) > 1 else None
+        length = other[0] if len(other) > 0 else None
+        f_emb = None
+        transformed_data = self.transformable_data_module.transform_batch(data).to(self.device) 
+        temporal = self.temporal and transformed_data.ndim == 5
+
+        if temporal:
+            f_emb = torch.stack([self.diffusion_tools.get_pos_encoding(f) for f in fps]).to(self._device) 
+
+        embedding_provider = self.embedding_provider
+        if transformed_data.ndim == 5:
+            embedding_provider = self.temporal_embedding_provider
+
+        captions = self.captions_preprocess(captions) if self.captions_preprocess is not None else captions
+
+        if torch.rand(1)[0] > self.cfg_train_ratio and not (temporal and self.disable_temporal_caption_embs):
+            d_embs = embedding_provider.get_embedding(data, captions).to(self.device)
+        else:
+            d_embs = None
+ 
+        loss = self.diffusion_tools.train_step(self.unet, self.loss, transformed_data, d_embs, f_emb=f_emb, temporal=temporal)
        
-        self.log("train_loss", loss, on_step=False, on_epoch=True, prog_bar=True, batch_size=images.shape[0])
+        self.log("train_loss", loss, on_step=False, on_epoch=True, prog_bar=True, batch_size=transformed_data.shape[0])
         return loss
     
     def on_train_batch_end(self, outputs, batch, batch_idx):
@@ -510,21 +565,32 @@ class VideoDiffusionTrainer(pl.LightningModule):
             self.ema.step_ema(self.ema_unet, self.unet)
         
     def validation_step(self, batch, batch_idx):
-        images, captions = batch
-        captions = self.captions_preprocess(captions) if self.captions_preprocess is not None else captions    
-        i_embs = self.alt_validation_emb_provider.get_embedding(images, captions).to(self.device)
-        images = self.transformable_data_module.transform_batch(images).to(self.device)    
-        normal_sampled_images = self.diffusion_tools.sample_data(self.unet, images.shape, i_embs, self.cfg_scale)
-        ema_samples_images = self.diffusion_tools.sample_data(self.ema_unet, images.shape, i_embs, self.cfg_scale)
+        data, captions, *other = batch  
+        fps = other[1] if len(other) > 1 else None
+        length = other[0] if len(other) > 0 else None
+        f_emb = None
+        transformed_data = self.transformable_data_module.transform_batch(data).to(self.device) 
+        temporal = self.temporal and transformed_data.ndim == 5
+        if temporal:
+            f_emb = torch.stack([self.diffusion_tools.get_pos_encoding(f) for f in fps]).to(self._device) 
+
+        notes = ("normal", "ema")
+        embedding_provider = self.embedding_provider
+        if transformed_data.ndim == 5:
+            embedding_provider = self.temporal_embedding_provider
+            notes = ("normal_temp", "ema_temp")
+
+        captions = self.captions_preprocess(captions) if self.captions_preprocess is not None else captions
+        d_embs = embedding_provider.get_embedding(data, captions).to(self.device)
+
+        normal_sampled = self.diffusion_tools.sample_data(self.unet, transformed_data.shape, d_embs, self.cfg_scale, clamp_var=True, f_emb=f_emb, temporal=temporal)
+        ema_sampled = self.diffusion_tools.sample_data(self.ema_unet, transformed_data.shape, d_embs, self.cfg_scale, clamp_var=True, f_emb=f_emb, temporal=temporal)
         
-        self.save_sampled_images(normal_sampled_images, captions, batch_idx, "normal")
-        self.save_sampled_images(ema_samples_images, captions, batch_idx, "ema")
-        if self.upscaler is not None and self.no_up_samples_out:
-            self.save_sampled_images(normal_sampled_images, captions, batch_idx, "normal_no_up", no_upscale=True)
-            self.save_sampled_images(ema_samples_images, captions, batch_idx, "ema_no_up", no_upscale=True)
+        self.save_sampled_data(normal_sampled, captions, batch_idx, notes[0])
+        self.save_sampled_data(ema_sampled, captions, batch_idx, notes[1])
             
         try:
-            val_score = self.val_score(ema_samples_images, images, captions)
+            val_score = self.val_score(ema_sampled, transformed_data, captions)
         except RuntimeError as e:
             val_score = {"score": 0}
             print(f"Error with Score:  {e}")
@@ -547,7 +613,7 @@ class VideoDiffusionTrainer(pl.LightningModule):
         self.val_epoch += 1
         if self.val_epoch % self.checkpoint_every_val_epochs == 0 and avg_loss < self.prev_checkpoint_val_avg:
             epoch = self.current_epoch
-            path = f"{self.sample_images_out_base_path}/{str(epoch)}_model.ckpt"
+            path = f"{self.sample_data_out_base_path}/{str(epoch)}_model.ckpt"
             print(f"Saving Checkpoint at: {path}")
             self.trainer.save_checkpoint(path)
             
@@ -556,31 +622,31 @@ class VideoDiffusionTrainer(pl.LightningModule):
             self.prev_checkpoint = path
             self.prev_checkpoint_val_avg = avg_loss
         
-        path = f"{self.sample_images_out_base_path}/latest.ckpt"
+        path = f"{self.sample_data_out_base_path}/latest.ckpt"
         print(f"Saving Checkpoint at: {path}")
         self.trainer.save_checkpoint(path)
 
         self.validation_step_outputs.clear() 
             
         
-    def save_sampled_images(self, sampled_images, captions, batch_idx, note=None, no_upscale=False):
+    def save_sampled_data(self, sampled_data, captions, batch_idx, note=None):
         epoch = self.current_epoch
         note = f"_{note}" if note is not None else ""
-        path_folder = f"{self.sample_images_out_base_path}/{str(epoch)}_{str(batch_idx)}{note}/"
+        path_folder = f"{self.sample_data_out_base_path}/{str(epoch)}_{str(batch_idx)}{note}/"
         path_cap = f"{path_folder}/{str(epoch)}_{str(batch_idx)}.txt"
         
         if os.path.exists(path_folder):
             shutil.rmtree(path_folder)
         os.makedirs(path_folder)
+        temporal = sampled_data.ndim == 5
         
-        sampled_images = self.transformable_data_module.reverse_transform_batch(sampled_images.detach().cpu())
+        sampled_data = self.transformable_data_module.reverse_transform_batch(sampled_data.detach().cpu())
             
-        if self.upscaler is not None and not no_upscale:
-            sampled_images = [ImageLoader.load_image(image) for image in sampled_images]
-            sampled_images = [self.upscaler(image.to(self.device)) for image in sampled_images]
-            
-        for image_id in range(len(sampled_images)):
-            self.save_images(sampled_images[image_id], path_folder + f"img_{image_id}.png")
+        for data_id in range(len(sampled_data)):
+            if temporal:
+                self.save_videos(sampled_data[data_id], path_folder + f"vid_{data_id}.mp4")
+            else:
+                self.save_images(sampled_data[data_id], path_folder + f"img_{data_id}.png")
         
         with open(path_cap, "w") as f:
             for cap in captions:

@@ -44,7 +44,7 @@ class VQModel(pl.LightningModule):
         n_codebook_embeddings,
         codebook_embedding_size,
         z_channels=256,
-        image_key="image",
+        image_key="data",
         monitor=None,
         remap=None,
         sane_index_shape=False,  # tell vector quantizer to return indices as bhw
