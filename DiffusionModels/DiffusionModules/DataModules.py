@@ -58,7 +58,8 @@ class CollateTypeFunction():
             collations = CollateTypeFunction.standard_collations_with_fps
         data, captions, fps = CollateTypeFunction.cnt(list(zip(*data)), collations)
         lengths = torch.tensor([len(e) for e in data])
-        video = pad_sequence(data, padding_value=padding_value, batch_first=True)
+        if len(data) > 0:
+            video = pad_sequence(data, padding_value=padding_value, batch_first=True)
         # video = pack_padded_sequence(video, lengths, batch_first=True)
         return video, captions, lengths, fps
 

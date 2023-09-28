@@ -29,7 +29,7 @@ os.environ["TOKENIZERS_PARALLELISM"] = "true"
 os.environ["WDS_VERBOSE_CACHE"] = "1"
 
 resume_from_checkpoint = True
-gpus=[1]
+gpus=[0]
 device = torch.device(f"cuda:{gpus[0]}" if torch.cuda.is_available() else "cpu")
 clip = ClipTools(device=device)
 translator = ClipTranslator(in_out_dim=clip.get_clip_emb_size())

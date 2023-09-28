@@ -145,7 +145,7 @@ model = LatentDiffusionTrainer(
     vqgan=vqgan,
     latent_shape=(3, 64, 64),
     transformable_data_module=data,
-    diffusion_tools=DiffusionTools(device=device, steps=1000, noise_scheduler=LinearScheduler(), clamp_x_start_in_sample=False), 
+    diffusion_tools=DiffusionTools(device=device, steps=1000, noise_scheduler=CosineScheduler(), clamp_x_start_in_sample=True), 
     captions_preprocess=captions_preprocess,
     sample_images_out_base_path=sample_images_out_base_path,
     checkpoint_every_val_epochs=1,

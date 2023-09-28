@@ -27,7 +27,7 @@ torch.set_float32_matmul_precision('high')
 os.environ["TOKENIZERS_PARALLELISM"] = "true"
 os.environ["WDS_VERBOSE_CACHE"] = "1"
 
-gpus=[1]
+gpus=[0]
 device = f"cuda:{str(gpus[0])}" if torch.cuda.is_available() else "cpu"
 wandb.init()
 wandb_logger = WandbLogger()
@@ -136,7 +136,7 @@ unet = UNet(
 
 clip_tools = ClipTools(device=device)
 translator_model_path = "clip_translator/model.ckpt"
-sample_images_out_base_path="samples_laten_diffusion/"
+sample_images_out_base_path="samples_cos_latent_diffusion/"
 old_checkpoint = glob.glob(f"{sample_images_out_base_path}/latest.ckpt")
 old_checkpoint = old_checkpoint if len(old_checkpoint) > 0 else glob.glob(f"{sample_images_out_base_path}/*.ckpt")
 resume_from_checkpoint = None if not resume_from_checkpoint else old_checkpoint[0] if len(old_checkpoint) > 0 else None
@@ -145,7 +145,7 @@ model = LatentDiffusionTrainer(
     vqgan=vqgan,
     latent_shape=(3, 64, 64),
     transformable_data_module=data,
-    diffusion_tools=DiffusionTools(device=device, steps=1000, noise_scheduler=CosineScheduler(), clamp_x_start_in_sample=True), 
+    diffusion_tools=DiffusionTools(device=device, steps=1000, noise_scheduler=LinearScheduler(), clamp_x_start_in_sample=False), 
     captions_preprocess=captions_preprocess,
     sample_images_out_base_path=sample_images_out_base_path,
     checkpoint_every_val_epochs=1,

@@ -9,15 +9,15 @@ import functools
 from enum import Enum
 from WebvidReader.VideoDataset import VideoDataset
 import webdataset as wds
-from torch.nn.utils.rnn import pad_packed_sequence
+from torch.nn.utils.rnn import pad_packed_sequence, pad_sequence, pack_padded_sequence
 from einops import rearrange
 from torch.utils.data import DataLoader
 from collections import OrderedDict
 
 
 class CollateTypeFunction():
-    standard_collations = OrderedDict(((0, "image"), (1, "caption")))
-    standard_collations_with_fps = OrderedDict(((0, "image"), (1, "caption"), (2, "fps")))
+    standard_collations = OrderedDict(((0, "data"), (1, "caption")))
+    standard_collations_with_fps = OrderedDict(((0, "data"), (1, "caption"), (2, "fps")))
 
     @staticmethod
     def additional_collate_none(data, collations=None):
@@ -31,9 +31,12 @@ class CollateTypeFunction():
                     valid = False
                     break
             return valid
+        
+        zipped = list(zip(*data))
 
-        filtered_data = list(filter(lambda x: filter_none(x, collations), data))
-        return {collations[key]: [e[key] for e in filtered_data] for key in collations.keys()}
+        filtered_data = list(filter(lambda x: filter_none(x, collations), zipped))
+        ret = OrderedDict([(collations[key], [item[key] for item in filtered_data]) for key in collations.keys()])
+        return ret 
 
     @staticmethod
     def cnd(data, collations=None):
@@ -50,13 +53,15 @@ class CollateTypeFunction():
         return data
 
     @staticmethod
-    def cndps(data, padding_value=-1, collations=None):
+    def cntps(data, padding_value=-1, collations=None, total_length=None):
         if collations is None:
             collations = CollateTypeFunction.standard_collations_with_fps
-
-        data, captions, fps = CollateTypeFunction.cnt(data, collations)
-        video, lengths = pad_packed_sequence(data, padding_value=padding_value, batch_first=True)
-        return { "video": video, "caption": captions, "length": lengths, "fps": fps }
+        data, captions, fps = CollateTypeFunction.cnt(list(zip(*data)), collations)
+        lengths = torch.tensor([len(e) for e in data])
+        if len(data) > 0:
+            video = pad_sequence(data, padding_value=padding_value, batch_first=True)
+        # video = pack_padded_sequence(video, lengths, batch_first=True)
+        return video, captions, lengths, fps
 
 
 collate_type_to_function = {
@@ -64,7 +69,6 @@ collate_type_to_function = {
     "COLLATE_NONE_DICT": CollateTypeFunction.cnd,
     "COLLATE_IDENTITY": CollateTypeFunction.ci
 }
-
 
 class CollateType(Enum):
     COLLATE_NONE_TUPLE="COLLATE_NONE_TUPLE"
@@ -176,11 +180,16 @@ class WebdatasetDataModule(TransformableImageDataModule):
 
     def train_dataloader(self):
         ds = wds.WebDataset(self.train_paths, shardshuffle=True).shuffle(1000).decode("pil").to_tuple("jpg", "json").map(WebdatasetDataModule.standard_preprocess)
-        return wds.WebLoader(ds, num_workers=self.num_workers, batch_size=self.batch_size, collate_fn=self.collate)
+        ds = ds.batched(self.batch_size)
+        loader = wds.WebLoader(ds, num_workers=self.num_workers, batch_size=None, collate_fn=self.collate)
+        return loader.unbatched().shuffle(1000).batched(self.batch_size)
 
     def val_dataloader(self):
         ds = wds.WebDataset(self.val_paths, shardshuffle=True).shuffle(1000, initial=10000).decode("pil").to_tuple("jpg", "json").map(WebdatasetDataModule.standard_preprocess)
-        return wds.WebLoader(ds, num_workers=self.num_workers, batch_size=self.batch_size, collate_fn=self.collate)
+        ds = ds.batched(self.batch_size)
+        loader = wds.WebLoader(ds, num_workers=self.num_workers, batch_size=None, collate_fn=self.collate)
+        return loader.unbatched().shuffle(1000).batched(self.batch_size)
+
 
 
 class VideoDatasetDataModule(TransformableDataModule):
@@ -190,12 +199,14 @@ class VideoDatasetDataModule(TransformableDataModule):
         train_data_path, 
         val_csv_path, 
         val_data_path, 
-        batch_size=16, 
+        batch_size=4, 
         num_workers=4, 
         target_resolution=(64, 64),
         padding_value=-1,
-        nth_frames=10,
-        max_frames_per_part=16
+        nth_frames=5,
+        max_frames_per_part=16,
+        min_frames_per_part=4,
+        first_part_only=True
     ):
         super(VideoDatasetDataModule, self).__init__()
         self.batch_size = batch_size
@@ -212,19 +223,25 @@ class VideoDatasetDataModule(TransformableDataModule):
             self.train_csv_path, 
             self.train_data_path, 
             target_resolution=self.target_resolution, 
-            channels_first=False,
             max_frames_per_part=self.max_frames_per_part,
-            nth_frames=self.nth_frames
+            nth_frames=self.nth_frames,
+            first_part_only=first_part_only,
+            min_frames_per_part=min_frames_per_part,
+            target_ordering="c t h w",
+            normalize=False
         )
         self.v_data = VideoDataset(
             self.val_csv_path, 
             self.val_data_path, 
             target_resolution=self.target_resolution, 
-            channels_first=False,
+            target_ordering="c t h w",
             max_frames_per_part=self.max_frames_per_part,
-            nth_frames=self.nth_frames
+            nth_frames=self.nth_frames,
+            first_part_only=first_part_only,
+            min_frames_per_part=min_frames_per_part,
+            normalize=False
         )
-        self.collate = lambda data: CollateTypeFunction.cndps(data, padding_value=self.padding_value)
+        self.collate = lambda data: CollateTypeFunction.cntps(data, padding_value=self.padding_value, total_length=self.max_frames_per_part)
 
     def train_dataloader(self):
         return DataLoader(
@@ -252,8 +269,8 @@ class VideoDatasetDataModule(TransformableDataModule):
     def reverse_transform_batch(self, batch):
         return self.t_data.reverse_normalize(batch)
 
-    def transform(self, video):
-        return self.t_data.normalize(video)
+    def transform(self, data):
+        return self.t_data.normalize(data)
 
-    def reverse_transform(self, video):
-        return self.t_data.reverse_normalize(video)
+    def reverse_transform(self, data):
+        return self.t_data.reverse_normalize(data)

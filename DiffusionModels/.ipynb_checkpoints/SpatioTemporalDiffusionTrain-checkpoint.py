@@ -23,14 +23,14 @@ torch.set_float32_matmul_precision('high')
 os.environ["TOKENIZERS_PARALLELISM"] = "true"
 os.environ["WDS_VERBOSE_CACHE"] = "1"
 
-gpus=[0]
+gpus=[2]
 device = f"cuda:{str(gpus[0])}" if torch.cuda.is_available() else "cpu"
 wandb.init()
 wandb_logger = WandbLogger()
 batch_size = 2
 wandb.save("*.py*")
 num_workers = 2
-skip_spatio = True
+skip_spatio = False
 print(device)
 
 unet_in_channels = 3
@@ -93,7 +93,7 @@ if not skip_spatio:
         check_val_every_n_epoch=200, 
         limit_val_batches=2, 
         num_sanity_val_steps=0, 
-        max_epochs=4000, 
+        max_epochs=20000, 
         logger=wandb_logger, 
         gradient_clip_val=0.008, 
         gradient_clip_algorithm="norm", 
@@ -112,7 +112,7 @@ temporal_dataset = VideoDatasetDataModule(
     "/home/shared-data/webvid/data_val/videos",
     batch_size=batch_size,
     num_workers=num_workers,
-    nth_frames=2,
+    nth_frames=1,
     max_frames_per_part=16,
     min_frames_per_part=4,
     first_part_only=True
@@ -136,7 +136,7 @@ temporal_trainer = pl.Trainer(
     check_val_every_n_epoch=200, 
     limit_val_batches=2, 
     num_sanity_val_steps=0, 
-    max_epochs=10000, 
+    max_epochs=20000, 
     logger=wandb_logger, 
     gradient_clip_val=0.008, 
     gradient_clip_algorithm="norm", 
