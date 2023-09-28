@@ -13,7 +13,7 @@ DEFAULT_ENCODER_ARGS = dict(
     in_channels=3,
     resolution=256,
     num_res_blocks=2,
-    attn_resolutions=[16],
+    attn_resolutions=[],
     ch_mult=(1,1,2,2,4), 
     dropout=0.0, 
     double_z=False,
@@ -26,7 +26,7 @@ DEFAULT_DECODER_ARGS = dict(
     out_channels=3,
     resolution=256,
     num_res_blocks=2,
-    attn_resolutions=[16],
+    attn_resolutions=[],
     ch_mult=(1,1,2,2,4), 
     dropout=0.0, 
     emb_size=None,
@@ -44,7 +44,7 @@ class VQModel(pl.LightningModule):
         n_codebook_embeddings,
         codebook_embedding_size,
         z_channels=256,
-        image_key="image",
+        image_key="data",
         monitor=None,
         remap=None,
         sane_index_shape=False,  # tell vector quantizer to return indices as bhw
@@ -93,24 +93,25 @@ class VQModel(pl.LightningModule):
         quant, emb_loss, info = self.quantize(h)
         return quant, emb_loss, info
 
-    def decode(self, quant, emb=None):
+    def decode(self, quant, emb=None, clamp=False):
         quant = self.post_quant_conv(quant)
         dec = self.decoder(quant, emb=emb)
+        dec = dec.clamp(-1, 1) if clamp else dec
         return dec
 
-    def decode_code(self, code_b, emb=None):
+    def decode_code(self, code_b, emb=None, clamp=False):
         quant_b = self.quantize.embed_code(code_b)
-        dec = self.decode(quant_b, emb=emb)
+        dec = self.decode(quant_b, emb=emb, clamp=clamp)
         return dec
 
-    def forward(self, x, emb=None):
+    def forward(self, x, emb=None, clamp=False):
         quant, diff, _ = self.encode(x, emb=emb)
-        dec = self.decode(quant, emb=emb)
+        dec = self.decode(quant, emb=emb, clamp=clamp)
         return dec, diff
 
     def get_input(self, batch, k):
         images = batch[k]
-        x = self.transformable_data_module.transform_images(images)
+        x = self.transformable_data_module.transform_batch(images)
         captions = None if self.caption_key is None else batch[self.caption_key]
         embs = None if self.embedding_provider is None else self.embedding_provider.get_embedding(images, captions)
         return x.float(), captions, embs
@@ -175,17 +176,12 @@ class VQModel(pl.LightningModule):
 
 
     def on_validation_epoch_end(self):
-        avg_dict = dict()
         outs = self.validation_step_outputs
         
-        for key in outs[0].keys():
-            values = [outs[i][key] for i in range(len(outs)) if key in outs[i]]
-            avg = sum(values) / len(values)
-            avg_dict[key] = avg
-
-        avg_loss = sum(avg_dict.values()) / len(avg_dict.values())
+        values = [outs[i]["rec_loss"] for i in range(len(outs)) if "rec_loss" in outs[i]]
+        avg_loss = sum(values) / len(values)
        
-        self.log_dict(avg_dict, on_step=False, on_epoch=True, prog_bar=True)
+        self.log_dict({"val_rec_loss":avg_loss}, on_step=False, on_epoch=True, prog_bar=True)
         self.val_epoch += 1
         if self.val_epoch % self.checkpoint_every_val_epochs == 0 and avg_loss < self.prev_checkpoint_val_avg:
             epoch = self.current_epoch
@@ -197,7 +193,11 @@ class VQModel(pl.LightningModule):
                 os.remove(self.prev_checkpoint)
             self.prev_checkpoint = path
             self.prev_checkpoint_val_avg = avg_loss
-            
+        
+        path = f"{self.reconstructions_out_base_path}/latest.ckpt"
+        print(f"Saving Checkpoint at: {path}")
+        self.trainer.save_checkpoint(path)
+
         self.validation_step_outputs.clear() 
 
     def save_reconstructions(self, reconstructions, batch_idx, captions=None, note=None):
@@ -209,7 +209,8 @@ class VQModel(pl.LightningModule):
             shutil.rmtree(path_folder)
         os.makedirs(path_folder)
         
-        reconstructions = self.transformable_data_module.reverse_transform_images(reconstructions.detach().cpu())
+        reconstructions = reconstructions.clamp(-1, 1)
+        reconstructions = self.transformable_data_module.reverse_transform_batch(reconstructions.detach().cpu())
             
         for image_id in range(len(reconstructions)):
             reconstructions[image_id].save(path_folder + f"img_{image_id}.png")

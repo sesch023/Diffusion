@@ -62,7 +62,8 @@ class Encoder(nn.Module):
                         in_channels=block_in,
                         out_channels=block_out,
                         emb_size=self.out_emb_size,
-                        dropout=dropout
+                        dropout=dropout,
+                        torch_mha=True
                     ))
                 else:
                     block.append(ResBlock(
@@ -96,7 +97,8 @@ class Encoder(nn.Module):
                 in_channels=block_in,
                 out_channels=block_in,
                 emb_size=self.out_emb_size,
-                dropout=dropout
+                dropout=dropout,
+                torch_mha=True
             ),
             ResBlock(
                 in_channels=block_in,
@@ -185,7 +187,8 @@ class Decoder(nn.Module):
                 in_channels=block_in,
                 out_channels=block_in,
                 emb_size=self.out_emb_size,
-                dropout=dropout
+                dropout=dropout,
+                torch_mha=True
             ),
             ResBlock(
                 in_channels=block_in,
@@ -206,7 +209,8 @@ class Decoder(nn.Module):
                         in_channels=block_in,
                         out_channels=block_out,
                         emb_size=self.out_emb_size,
-                        dropout=dropout
+                        dropout=dropout,
+                        torch_mha=True
                     ))
                 else:
                     block.append(ResBlock(

@@ -19,7 +19,9 @@ import numpy as np
 import wandb
 import copy
 from abc import ABC, abstractmethod
+import glob
 
+resume_from_checkpoint = True
 
 torch.set_float32_matmul_precision('high')
 os.environ["TOKENIZERS_PARALLELISM"] = "true"
@@ -29,8 +31,8 @@ gpus=[1]
 device = f"cuda:{str(gpus[0])}" if torch.cuda.is_available() else "cpu"
 wandb.init()
 wandb_logger = WandbLogger()
-batch_size = 16
-num_workers = 8
+batch_size = 4
+num_workers = 4
 wandb.save("*.py*")
 
 def load_vqgan():
@@ -51,7 +53,7 @@ def load_vqgan():
         in_channels=3,
         double_z=False,
         **shared_args
-    )
+    ).to(device)
 
     print("Encoder")
     summary(encoder, [(1, encoder.in_channels, shared_args["resolution"], shared_args["resolution"]), (1, 512)], verbose=1)
@@ -59,7 +61,7 @@ def load_vqgan():
     decoder = Decoder(
         out_channels=3,
         **shared_args
-    )
+    ).to(device)
 
     decoder_in_res = shared_args["resolution"] // (2 ** (len(shared_args["ch_mult"])-1))
     print("Decoder")
@@ -69,7 +71,7 @@ def load_vqgan():
         input_nc=decoder.out_channels,
         n_layers=3,
         ndf=64
-    )
+    ).to(device)
 
     print("Discriminator")
     summary(discriminator, (1, decoder.out_channels, shared_args["resolution"], shared_args["resolution"]), verbose=1)
@@ -80,11 +82,13 @@ def load_vqgan():
         disc_weight=0.75,
         codebook_weight=1.0,
         disc_conditional=False
-    )
+    ).to(device)
 
     clip_tools = ClipTools(device=device)
     emb_prov = ClipEmbeddingProvider(clip_tools=clip_tools)
 
+    reconstructions_out_base_path = "emb_reconstructions/"
+    z_channels = 3
     return VQModel.load_from_checkpoint(
         "vqgan.ckpt", 
         device=device, 
@@ -92,8 +96,10 @@ def load_vqgan():
         decoder=decoder, 
         loss=loss, 
         transformable_data_module=None,
-        embedding_provider=emb_prov
-    )
+        embedding_provider=emb_prov,
+        strict=False,
+        map_location=device
+    ).to(device)
 
 
 data = WebdatasetDataModule(
@@ -109,6 +115,7 @@ captions_preprocess = lambda captions: [cap[:77] for cap in captions]
 
 vqgan = load_vqgan()
 
+print("Creating UNet")
 unet_in_channels = 3
 unet_in_size = 64
 unet = UNet(
@@ -130,25 +137,30 @@ unet = UNet(
 clip_tools = ClipTools(device=device)
 translator_model_path = "clip_translator/model.ckpt"
 sample_images_out_base_path="samples_laten_diffusion/"
+old_checkpoint = glob.glob(f"{sample_images_out_base_path}/latest.ckpt")
+old_checkpoint = old_checkpoint if len(old_checkpoint) > 0 else glob.glob(f"{sample_images_out_base_path}/*.ckpt")
+resume_from_checkpoint = None if not resume_from_checkpoint else old_checkpoint[0] if len(old_checkpoint) > 0 else None
 model = LatentDiffusionTrainer(
     unet, 
     vqgan=vqgan,
+    latent_shape=(3, 64, 64),
     transformable_data_module=data,
-    diffusion_tools=DiffusionTools(device=device, in_size=unet_in_size, steps=1000, noise_scheduler=LinearScheduler(), clamp_x_start_in_sample=False), 
+    diffusion_tools=DiffusionTools(device=device, steps=1000, noise_scheduler=CosineScheduler(), clamp_x_start_in_sample=True), 
     captions_preprocess=captions_preprocess,
     sample_images_out_base_path=sample_images_out_base_path,
     checkpoint_every_val_epochs=1,
     embedding_provider=ClipEmbeddingProvider(clip_tools=clip_tools),
     # alt_validation_emb_provider=ClipTranslatorEmbeddingProvider(clip_tools=clip_tools, translator_model_path=translator_model_path)
+    quantize_after_sample=False
 )
 
 lr_monitor = cb.LearningRateMonitor(logging_interval='epoch')
 trainer = pl.Trainer(
     limit_train_batches=100, 
-    check_val_every_n_epoch=100, 
+    check_val_every_n_epoch=200, 
     limit_val_batches=5, 
     num_sanity_val_steps=0, 
-    max_epochs=10000, 
+    max_epochs=30000, 
     logger=wandb_logger, 
     default_root_dir="model/", 
     # gradient_clip_val=1.0, 
@@ -158,5 +170,5 @@ trainer = pl.Trainer(
     devices=gpus
 )
 
-trainer.fit(model, data)
+trainer.fit(model, data, ckpt_path=resume_from_checkpoint)
 torch.save(model.state_dict(), f"{sample_images_out_base_path}/model.ckpt")

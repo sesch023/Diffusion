@@ -20,6 +20,7 @@ import wandb
 import copy
 from abc import ABC, abstractmethod
 from super_image import DrlnModel, ImageLoader
+import glob
 import braceexpand
 from DiffusionModules.Diffusion import ClipTools
 
@@ -27,12 +28,13 @@ torch.set_float32_matmul_precision('high')
 os.environ["TOKENIZERS_PARALLELISM"] = "true"
 os.environ["WDS_VERBOSE_CACHE"] = "1"
 
-gpus=[1]
-device = torch.device("cuda:1" if torch.cuda.is_available() else "cpu")
+resume_from_checkpoint = True
+gpus=[0]
+device = torch.device(f"cuda:{gpus[0]}" if torch.cuda.is_available() else "cpu")
 clip = ClipTools(device=device)
 translator = ClipTranslator(in_out_dim=clip.get_clip_emb_size())
 wandb_logger = WandbLogger()
-batch_size = 256
+batch_size = 64
 wandb.save("*.py*")
 
 data = WebdatasetDataModule(
@@ -43,24 +45,26 @@ data = WebdatasetDataModule(
 
 model_out="clip_translator/model.ckpt"
 model_out_final = "clip_translator/final.ckpt"
+old_checkpoint = glob.glob(model_out)
+resume_from_checkpoint = None if not resume_from_checkpoint else old_checkpoint[0] if len(old_checkpoint) > 0 else None
 model = ClipTranslatorTrainer(translator, device=device, model_out=model_out)
 
-train_batches = int((11e6 + 3e6) / batch_size) + 1
+train_batches = (int((11e6 + 3e6) / batch_size) + 1) 
 val_batches = int(320000 / batch_size) + 1
 
 lr_monitor = cb.LearningRateMonitor(logging_interval='step')
 trainer = pl.Trainer(
-    limit_train_batches=train_batches//2, 
+    limit_train_batches=int(train_batches / 10), 
     limit_val_batches=val_batches,
     check_val_every_n_epoch=1, 
     num_sanity_val_steps=0, 
     max_epochs=20, 
     logger=wandb_logger, 
-    callbacks=[EarlyStopping(monitor="val_loss", mode="min", patience=5), lr_monitor],
+    callbacks=[EarlyStopping(monitor="val_loss", mode="min", patience=20), lr_monitor],
     devices=gpus
 )
 
-trainer.fit(model, data)
+trainer.fit(model, data, ckpt_path=resume_from_checkpoint)
 torch.save(model.state_dict(), model_out_final)
 
 
