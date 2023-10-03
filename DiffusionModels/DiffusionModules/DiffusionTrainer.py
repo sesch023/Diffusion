@@ -27,64 +27,11 @@ from DiffusionModules.DiffusionModels import ExponentialMovingAverage
 from DiffusionModules.Util import *
 from DiffusionModules.DataModules import CIFAR10DataModule
 from DiffusionModules.ModelLoading import load_udm
+from DiffusionModules.EmbeddingTools import *
 from einops import rearrange
 
 sys.modules['ClipTranslatorModules'] = tools
 
-    
-class BaseEmbeddingProvider(ABC, nn.Module):
-    @abstractmethod
-    def get_embedding(self, images, labels):
-        pass
-
-    def forward(self, images, labels):
-        return self.get_embedding(images, labels)
-    
-class ClipTranslatorEmbeddingProvider(BaseEmbeddingProvider):
-    def __init__(self, translator_model_path, clip_tools=None):
-        super().__init__()
-        self.clip_tools = ClipTools() if clip_tools is None else clip_tools
-        self.translator_model_path = translator_model_path
-        self.model = ClipTranslatorTrainer.load_from_checkpoint(self.translator_model_path).model
-        self.model.eval()
-
-    def get_embedding(self, images, labels):
-        cap_emb = self.clip_tools.get_clip_emb_text(labels)
-        i_embs = self.model(cap_emb)
-        return i_embs
-    
-class ClipEmbeddingProvider(BaseEmbeddingProvider):
-    def __init__(self, clip_tools=None):
-        super().__init__()
-        self.clip_tools = ClipTools() if clip_tools is None else clip_tools
-        
-    def get_embedding(self, images, labels):
-        # In the New version this only uses images
-        i_embs = self.clip_tools.get_clip_emb_images(images)    
-        return i_embs
-    
-
-class ClipVideoEmbeddingProvider(BaseEmbeddingProvider):
-    def __init__(self, clip_tools=None):
-        super().__init__()
-        self.clip_tools = ClipTools() if clip_tools is None else clip_tools
-
-    def get_embedding(self, videos, labels):
-        # Use Captions for now
-        v_embs = self.clip_tools.get_clip_emb_text(labels)    
-        return v_embs
-
-    
-class CF10EmbeddingProvider(BaseEmbeddingProvider):
-    def __init__(self, classes=None):
-        super().__init__()
-        self.classes = classes if classes is not None else CIFAR10DataModule.classes
-        self.num_classes = len(self.classes)
-        
-    def get_embedding(self, images, labels):
-        labels = [self.classes.index(label) for label in labels]
-        labels = torch.Tensor(labels).long()
-        return nn.functional.one_hot(labels, self.num_classes).float()
 
 class UpscalerMode(Enum):
     NONE="NONE",

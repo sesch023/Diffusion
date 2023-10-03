@@ -98,7 +98,7 @@ def load_vqgan():
 
 data = WebdatasetDataModule(
     ["/home/archive/CC12M/cc12m/{00000..01242}.tar", "/home/archive/CC3M/cc3m/{00000..00331}.tar"],
-    ["/home/archive/CocoWebdataset/mscoco/{00000..00059}.tar"],
+    ["/home/archive/CocoWebdatasetFullScale/mscoco/{00000..00040}.tar"],
     batch_size=batch_size,
     collate_type=CollateType.COLLATE_NONE_TUPLE,
     num_workers=num_workers,

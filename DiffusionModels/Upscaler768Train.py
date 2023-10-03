@@ -44,7 +44,7 @@ wandb.save("*.py*")
 
 data = WebdatasetDataModule(
     ["/home/archive/CC12M_HIGH_RES/cc12m/{00000..01200}.tar"],
-    ["/home/archive/CC12M_HIGH_RES/cc12m/{01201..01242}.tar"],
+    ["/home/archive/CC12M_HIGH_RES/cc12m/{01201..01221}.tar"],
     batch_size=batch_size,
     img_in_target_size=768
 )  

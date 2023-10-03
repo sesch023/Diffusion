@@ -19,7 +19,6 @@ import wandb
 import copy
 from abc import ABC, abstractmethod
 from super_image import DrlnModel, ImageLoader
-from DiffusionModules.Diffusion import ClipTools
 
 
 class ClipTranslator(nn.Module):
@@ -55,20 +54,28 @@ class ClipTranslatorTrainer(pl.LightningModule):
         super().__init__()
         self.dev = ("cuda" if torch.cuda.is_available() else "cpu") if device is None else device
         self.model = model.to(self.dev)
+        
+        from DiffusionModules.EmbeddingTools import ClipTools
+        
         self.clip_tools = ClipTools(device=self.dev) if clip_tools is None else clip_tools
         self.loss = nn.MSELoss() if loss is None else loss
         self.optimizer = optim.AdamW(self.model.parameters(), lr=1e-3, weight_decay=0.0001) if optimizer is None else optimizer
         self.validation_step_outputs = []
+        self.test_step_outputs = []
         self.best_loss = float("inf")
         self.model_out = model_out
         self.save_hyperparameters()
     
-    def training_step(self, batch, batch_idx):
-        images, captions = batch
+    def eval_items(self, images, captions, ret_emb=False):
         cap_emb = self.clip_tools.get_clip_emb_text(captions).to(self.dev) 
         img_emb = self.clip_tools.get_clip_emb_images(images).to(self.dev) 
         model_out = self.model(cap_emb)
         loss = self.loss(img_emb, model_out)
+        return (loss, cap_emb, img_emb) if ret_emb else loss
+    
+    def training_step(self, batch, batch_idx):
+        images, captions = batch
+        loss, cap_emb, img_emb = self.eval_items(images, captions, True)
         if batch_idx % 100 == 0:
             with torch.no_grad():
                 identity_loss = self.loss(img_emb, cap_emb)
@@ -78,11 +85,14 @@ class ClipTranslatorTrainer(pl.LightningModule):
         
     def validation_step(self, batch, batch_idx):
         images, captions = batch
-        cap_emb = self.clip_tools.get_clip_emb_text(captions).to(self.dev) 
-        img_emb = self.clip_tools.get_clip_emb_images(images).to(self.dev) 
-        model_out = self.model(cap_emb)
-        loss = self.loss(img_emb, model_out)
+        loss = self.eval_items(images, captions)
         self.validation_step_outputs.append(loss)
+        return loss
+    
+    def test_step(self, batch, batch_idx):
+        images, captions = batch
+        loss = self.eval_items(images, captions)  
+        self.test_step_outputs.append(loss)
         return loss
     
     def on_validation_epoch_end(self):
@@ -95,6 +105,11 @@ class ClipTranslatorTrainer(pl.LightningModule):
             self.trainer.save_checkpoint(self.model_out)
         
         self.validation_step_outputs.clear()
+        
+    def on_test_epoch_end(self):
+        avg_loss = sum(self.test_step_outputs) / len(self.test_step_outputs)
+        self.log("test_loss", avg_loss, on_step=False, on_epoch=True, prog_bar=True)
+        self.test_step_outputs.clear()
     
     def configure_optimizers(self):
         lr = self.optimizer.param_groups[-1]['lr']

@@ -12,6 +12,7 @@ from enum import Enum
 from torchviz import make_dot
 import wandb
 from einops import rearrange
+from DiffusionModules.EmbeddingTools import ClipTools
 
 
 def equalize_shape_of_first(t1, t2):
@@ -19,36 +20,6 @@ def equalize_shape_of_first(t1, t2):
         t1 = t1[..., None]
     return t1
 
-
-class ClipTools(nn.Module):
-    def __init__(self, clip_model="ViT-B/32", device=None):
-        super().__init__()
-        self._device = ("cuda" if torch.cuda.is_available() else "cpu") if device is None else device
-        self._clip_model, self._clip_preprocess = clip.load(clip_model, device=self._device)
-        self._clip_model.eval()
-    
-    def get_clip_emb_size(self):
-        return self._clip_model.visual.output_dim 
-    
-    def get_clip_emb_images(self, images):
-        images = torch.stack([self._clip_preprocess(i) for i in images])
-        return self._clip_model.encode_image(images.to(self._device)).float()
-
-    def get_clip_emb_videos(self, videos):
-        b, t = videos.shape[0], videos.shape[1]
-        stacked_frames = rearrange(videos, 'b t c h w -> (b t) c h w')
-        videos = torch.stack([self._clip_preprocess(i) for i in stacked_frames])
-        embs = self._clip_model.encode_image(videos.to(self._device)).float()
-        embs = rearrange(embs, '(b t) e -> b t e', b=b, t=t)
-        # This could be very bad
-        return embs.mean(dim=1)
-    
-    def get_clip_emb_text(self, texts):
-        # TODO: Truncate hack is stupid for long sentences
-        return self._clip_model.encode_text(clip.tokenize(texts, truncate = True).to(self._device)).float()
-        
-    def forward(self, images, texts):
-        return self.get_clip_emb_images(images), self.get_clip_emb_text(texts)
     
 class NoiseScheduler(ABC):
     @abstractmethod

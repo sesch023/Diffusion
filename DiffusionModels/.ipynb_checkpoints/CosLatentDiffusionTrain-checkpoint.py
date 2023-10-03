@@ -27,7 +27,7 @@ torch.set_float32_matmul_precision('high')
 os.environ["TOKENIZERS_PARALLELISM"] = "true"
 os.environ["WDS_VERBOSE_CACHE"] = "1"
 
-gpus=[0]
+gpus=[1]
 device = f"cuda:{str(gpus[0])}" if torch.cuda.is_available() else "cpu"
 wandb.init()
 wandb_logger = WandbLogger()
@@ -103,13 +103,24 @@ def load_vqgan():
 
 
 data = WebdatasetDataModule(
-    ["/home/archive/CC12M/cc12m/{00000..01242}.tar", "/home/archive/CC3M/cc3m/{00000..00331}.tar"],
-    ["/home/archive/CocoWebdataset/mscoco/{00000..00059}.tar"],
+    ["/home/archive/CC12M_HIGH_RES/cc12m/{00000..01242}.tar", "/home/archive/CC3M_HIGH_RES/cc3m/{00000..00331}.tar"],
+    ["/home/archive/CocoWebdatasetFullScale/mscoco/{00000..00040}.tar"],
     batch_size=batch_size,
     collate_type=CollateType.COLLATE_NONE_TUPLE,
     num_workers=num_workers,
     img_in_target_size=256
 )  
+
+"""
+data = WebdatasetDataModule(
+    ["/home/archive/CC12M/cc12m/{00000..01242}.tar", "/home/archive/CC3M/cc3m/{00000..00331}.tar"],
+    ["/home/archive/CocoWebdataset/mscoco/{00000..00040}.tar"],
+    batch_size=batch_size,
+    collate_type=CollateType.COLLATE_NONE_TUPLE,
+    num_workers=num_workers,
+    img_in_target_size=256
+)  
+"""
         
 captions_preprocess = lambda captions: [cap[:77] for cap in captions]
 

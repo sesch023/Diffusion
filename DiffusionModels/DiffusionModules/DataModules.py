@@ -53,7 +53,7 @@ class CollateTypeFunction():
         return data
 
     @staticmethod
-    def cntps(data, padding_value=-1, collations=None, total_length=None):
+    def cntps(data, padding_value=-1, collations=None):
         if collations is None:
             collations = CollateTypeFunction.standard_collations_with_fps
         data, captions, fps = CollateTypeFunction.cnt(list(zip(*data)), collations)
@@ -86,6 +86,10 @@ class TransformableDataModule(LightningDataModule, ABC):
     @abstractmethod
     def val_dataloader(self):
         pass
+    
+    @abstractmethod
+    def test_dataloader(self):
+        pass
 
     @abstractmethod
     def transform_batch(self, batch):
@@ -96,11 +100,11 @@ class TransformableDataModule(LightningDataModule, ABC):
         pass
 
     @abstractmethod
-    def transform(self, image):
+    def transform(self, data):
         pass
 
     @abstractmethod
-    def reverse_transform(self, image):
+    def reverse_transform(self, data):
         pass
 
 
@@ -118,6 +122,10 @@ class TransformableImageDataModule(TransformableDataModule, ABC):
     @abstractmethod
     def val_dataloader(self):
         pass
+    
+    @abstractmethod
+    def test_dataloader(self):
+        pass
 
     def transform_batch(self, batch):
         return self.transform.transform_images(batch)
@@ -125,35 +133,46 @@ class TransformableImageDataModule(TransformableDataModule, ABC):
     def reverse_transform_batch(self, batch):
         return self.transform.reverse_transform_images(batch)
 
-    def transform(self, image):
-        return self.transform.transform_image(image)
+    def transform(self, data):
+        return self.transform.transform_image(data)
 
-    def reverse_transform(self, image):
-        return self.transform.reverse_transform_image(image)
+    def reverse_transform(self, data):
+        return self.transform.reverse_transform_image(data)
 
 
 class CIFAR10DataModule(TransformableImageDataModule):
     classes = ('airplane', 'automobile', 'bird', 'cat', 'deer', 'dog', 'frog', 'horse', 'ship', 'truck')
 
-    def __init__(self, cifar_path="/home/archive/cifar10-64", batch_size=16, num_workers=4, img_in_target_size=64):
+    def __init__(self, cifar_path="/home/archive/cifar10-64", batch_size=16, separate_val_split=False, separate_val_split_ratio=0.1, num_workers=4, img_in_target_size=64):
         super(CIFAR10DataModule, self).__init__(CollateType.COLLATE_NONE_TUPLE, None, img_in_target_size)
         self.batch_size = batch_size
         self.cifar_path = cifar_path
         self.num_workers = num_workers
+        self.separate_val_split = separate_val_split
+        self.separate_val_split_ratio = separate_val_split_ratio
         self.collate_base = self.collate
         self.collate = lambda x: CIFAR10DataModule.collate_class_labels(self.collate_base(x))
-    
+        
+        if self.separate_val_split:
+            trainset = torchvision.datasets.ImageFolder(f"{self.cifar_path}/train")
+            self.val_set, self.train_set = torch.utils.data.random_split(trainset, [self.separate_val_split_ratio, 1.0 - self.separate_val_split_ratio])
+            self.test_set = torchvision.datasets.ImageFolder(f"{self.cifar_path}/test")
+        else:
+            self.train_set = torchvision.datasets.ImageFolder(f"{self.cifar_path}/train")
+            self.val_set = self.test_set = torchvision.datasets.ImageFolder(f"{self.cifar_path}/test")
+            
     @staticmethod
     def collate_class_labels(x):
         return x[0], [CIFAR10DataModule.classes[e] for e in x[1]]
 
     def train_dataloader(self):
-        trainset = torchvision.datasets.ImageFolder(f"{self.cifar_path}/train")
-        return torch.utils.data.DataLoader(trainset, batch_size=self.batch_size, shuffle=True, num_workers=self.num_workers, collate_fn=self.collate)
+        return torch.utils.data.DataLoader(self.train_set, batch_size=self.batch_size, shuffle=True, num_workers=self.num_workers, collate_fn=self.collate)
 
     def val_dataloader(self):
-        valset = torchvision.datasets.ImageFolder(f"{self.cifar_path}/test")
-        return torch.utils.data.DataLoader(valset, batch_size=self.batch_size, shuffle=True, num_workers=self.num_workers, collate_fn=self.collate)
+        return torch.utils.data.DataLoader(self.val_set, batch_size=self.batch_size, shuffle=True, num_workers=self.num_workers, collate_fn=self.collate)
+    
+    def test_dataloader(self):
+        return torch.utils.data.DataLoader(self.test_set, batch_size=self.batch_size, shuffle=True, num_workers=self.num_workers, collate_fn=self.collate)
 
 
 class WebdatasetDataModule(TransformableImageDataModule):
@@ -163,11 +182,16 @@ class WebdatasetDataModule(TransformableImageDataModule):
         label = json["caption"]
         return image, label
 
-    def __init__(self, train_paths, val_paths, collate_type=CollateType.COLLATE_NONE_TUPLE, collate_fn=None, batch_size=16, num_workers=4, img_in_target_size=64):
+    def __init__(self, train_paths, val_paths, test_paths=None, collate_type=CollateType.COLLATE_NONE_TUPLE, collate_fn=None, batch_size=16, num_workers=4, img_in_target_size=64):
         super(WebdatasetDataModule, self).__init__(collate_type, collate_fn, img_in_target_size)
         self.batch_size = batch_size
         self.train_paths = self.braceexpand_paths(train_paths)
         self.val_paths = self.braceexpand_paths(val_paths)
+        
+        self.test_paths = test_paths
+        if self.test_paths is not None:
+            self.test_paths = self.braceexpand_paths(test_paths)
+        
         self.num_workers = num_workers
         self.img_in_target_size = img_in_target_size
         self.transform = ImageTransformer(img_target_size=self.img_in_target_size)
@@ -179,19 +203,44 @@ class WebdatasetDataModule(TransformableImageDataModule):
         return functools.reduce(operator.add, map(lambda a: list(braceexpand.braceexpand(a)), paths))
 
     def train_dataloader(self):
-        ds = wds.WebDataset(self.train_paths, shardshuffle=True).shuffle(1000).decode("pil").to_tuple("jpg", "json").map(WebdatasetDataModule.standard_preprocess)
-        ds = ds.batched(self.batch_size)
-        loader = wds.WebLoader(ds, num_workers=self.num_workers, batch_size=None, collate_fn=self.collate)
-        return loader.unbatched().shuffle(1000).batched(self.batch_size)
+        ds = (wds.WebDataset(self.train_paths, shardshuffle=True)
+            .shuffle(1000)
+            .decode("pil")
+            .to_tuple("jpg", "json")
+            .map(WebdatasetDataModule.standard_preprocess)
+            .batched(self.batch_size))
+        return (wds.WebLoader(ds, num_workers=self.num_workers, batch_size=None, collate_fn=self.collate)
+            .unbatched()
+            .shuffle(1000)
+            .batched(self.batch_size))
 
     def val_dataloader(self):
-        ds = wds.WebDataset(self.val_paths, shardshuffle=True).shuffle(1000, initial=10000).decode("pil").to_tuple("jpg", "json").map(WebdatasetDataModule.standard_preprocess)
-        ds = ds.batched(self.batch_size)
-        loader = wds.WebLoader(ds, num_workers=self.num_workers, batch_size=None, collate_fn=self.collate)
-        return loader.unbatched().shuffle(1000).batched(self.batch_size)
+        ds = (wds.WebDataset(self.val_paths, shardshuffle=True)
+            .shuffle(1000, initial=10000)
+            .decode("pil").to_tuple("jpg", "json")
+            .map(WebdatasetDataModule.standard_preprocess)
+            .batched(self.batch_size))
+        return (wds.WebLoader(ds, num_workers=self.num_workers, batch_size=None, collate_fn=self.collate)
+            .unbatched()
+            .shuffle(1000)
+            .batched(self.batch_size))
+    
+    def test_dataloader(self):
+        if self.test_paths is None:
+            print("Warning: No test paths defined, returning a Validation Dataloader!")
+            return self.val_dataloader()
+        else:
+            ds = (wds.WebDataset(self.test_paths, shardshuffle=True)
+                .shuffle(1000, initial=10000)
+                .decode("pil").to_tuple("jpg", "json")
+                .map(WebdatasetDataModule.standard_preprocess)
+                .batched(self.batch_size))
+            return (wds.WebLoader(ds, num_workers=self.num_workers, batch_size=None, collate_fn=self.collate)
+                .unbatched()
+                .shuffle(1000)
+                .batched(self.batch_size))
 
-
-
+    
 class VideoDatasetDataModule(TransformableDataModule):
     def __init__(
         self, 
@@ -199,6 +248,8 @@ class VideoDatasetDataModule(TransformableDataModule):
         train_data_path, 
         val_csv_path, 
         val_data_path, 
+        test_csv_path=None, 
+        test_data_path=None, 
         batch_size=4, 
         num_workers=4, 
         target_resolution=(64, 64),
@@ -214,6 +265,8 @@ class VideoDatasetDataModule(TransformableDataModule):
         self.train_data_path = train_data_path
         self.val_csv_path = val_csv_path
         self.val_data_path = val_data_path
+        self.test_csv_path = test_csv_path
+        self.test_data_path = test_data_path
         self.num_workers = num_workers
         self.target_resolution = target_resolution
         self.padding_value = padding_value
@@ -241,7 +294,22 @@ class VideoDatasetDataModule(TransformableDataModule):
             min_frames_per_part=min_frames_per_part,
             normalize=False
         )
-        self.collate = lambda data: CollateTypeFunction.cntps(data, padding_value=self.padding_value, total_length=self.max_frames_per_part)
+        
+        self.t_data = None
+        if self.test_csv_path is not None and self.test_data_path is not None:
+            self.t_data = VideoDataset(
+                self.test_csv_path, 
+                self.test_data_path, 
+                target_resolution=self.target_resolution, 
+                target_ordering="c t h w",
+                max_frames_per_part=self.max_frames_per_part,
+                nth_frames=self.nth_frames,
+                first_part_only=first_part_only,
+                min_frames_per_part=min_frames_per_part,
+                normalize=False
+            )
+
+        self.collate = lambda data: CollateTypeFunction.cntps(data, padding_value=self.padding_value)
 
     def train_dataloader(self):
         return DataLoader(
@@ -262,6 +330,20 @@ class VideoDatasetDataModule(TransformableDataModule):
             pin_memory=False,
             num_workers=self.num_workers
         )
+    
+    def test_dataloader(self):
+        if self.t_data is None:
+            print("Warning: No test paths defined, returning a Validation Dataloader!")
+            return self.val_dataloader()
+        else:
+            return DataLoader(
+                self.t_data,
+                batch_size=self.batch_size ,
+                shuffle=True,
+                collate_fn=self.collate,
+                pin_memory=False,
+                num_workers=self.num_workers
+            )
 
     def transform_batch(self, batch):
         return self.t_data.normalize(batch)

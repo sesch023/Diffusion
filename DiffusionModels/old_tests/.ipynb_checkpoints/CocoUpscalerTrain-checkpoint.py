@@ -40,8 +40,8 @@ wandb.save("*.py*")
 # url_test = "/home/shared-data/LAION-400M/laion400m-data/{00000..00009}.tar"
 
 data = WebdatasetDataModule(
-    ["/home/archive/CocoWebdataset/mscoco/{00000..00055}.tar"],
-    ["/home/archive/CocoWebdataset/mscoco/{00056..00059}.tar"],
+    ["/home/archive/CocoWebdatasetFullScale/mscoco/{00000..00050}.tar"],
+    ["/home/archive/CocoWebdatasetFullScale/mscoco/{00050..00054}.tar"],
     batch_size=batch_size,
     img_in_target_size=256
 )  

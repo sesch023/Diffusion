@@ -38,8 +38,9 @@ batch_size = 64
 wandb.save("*.py*")
 
 data = WebdatasetDataModule(
-    ["/home/archive/CC12M/cc12m/{00000..01242}.tar", "/home/archive/CC3M/cc3m/{00000..00331}.tar"],
-    ["/home/archive/CocoWebdataset/mscoco/{00000..00059}.tar"],
+    ["/home/archive/CC12M/cc12m/{00000..01100}.tar", "/home/archive/CC3M/cc3m/{00000..00300}.tar"],
+    ["/home/archive/CC12M/cc12m/{01101..01242}.tar", "/home/archive/CC3M/cc3m/{00301..00331}.tar"],
+    ["/home/archive/CocoWebdatasetFullScale/mscoco/{00000..00059}.tar"],
     batch_size=batch_size
 )  
 
@@ -52,10 +53,12 @@ model = ClipTranslatorTrainer(translator, device=device, model_out=model_out)
 train_batches = (int((11e6 + 3e6) / batch_size) + 1) 
 val_batches = int(320000 / batch_size) + 1
 
+print(train_batches)
+
 lr_monitor = cb.LearningRateMonitor(logging_interval='step')
 trainer = pl.Trainer(
     limit_train_batches=int(train_batches / 10), 
-    limit_val_batches=val_batches,
+    limit_val_batches=int(val_batches / 10),
     check_val_every_n_epoch=1, 
     num_sanity_val_steps=0, 
     max_epochs=20, 
@@ -65,6 +68,7 @@ trainer = pl.Trainer(
 )
 
 trainer.fit(model, data, ckpt_path=resume_from_checkpoint)
+trainer.test(model, dataloaders=data.test_dataloader())
 torch.save(model.state_dict(), model_out_final)
 
 

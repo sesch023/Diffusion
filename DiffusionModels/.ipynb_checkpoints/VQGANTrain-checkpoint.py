@@ -33,10 +33,11 @@ wandb.save("*.py*")
 
 data = WebdatasetDataModule(
     ["/home/archive/CC12M/cc12m/{00000..01242}.tar", "/home/archive/CC3M/cc3m/{00000..00331}.tar"],
-    ["/home/archive/CocoWebdataset/mscoco/{00000..00059}.tar"],
+    ["/home/archive/CocoWebdatasetFullScale/mscoco/{00000..0004ß}.tar"],
     batch_size=batch_size,
     collate_type=CollateType.COLLATE_NONE_DICT,
-    num_workers=num_workers
+    num_workers=num_workers,
+    img_in_target_size=256
 )  
         
 captions_preprocess = lambda captions: [cap[:77] for cap in captions]
@@ -100,7 +101,7 @@ model = VQModel(
     n_codebook_embeddings=8192,
     codebook_embedding_size=z_channels,
     z_channels=z_channels,
-    image_key="image",
+    image_key="data",
     monitor="val/rec_loss",
     remap=None,
     sane_index_shape=False,  # tell vector quantizer to return indices as bhw

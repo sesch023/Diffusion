@@ -2,6 +2,7 @@ from DiffusionModules.Diffusion import *
 from DiffusionModules.DiffusionTrainer import *
 from DiffusionModules.DiffusionModels import *
 from DiffusionModules.DataModules import *
+from DiffusionModules.EmbeddingTools import ClipTextEmbeddingProvider
 import os
 import torch
 from torch import optim, nn, utils, Tensor
@@ -17,6 +18,9 @@ import wandb
 import copy
 from abc import ABC, abstractmethod
 import glob
+
+# Name Changed, Hack for Model loading
+sys.modules['DiffusionModules.DiffusionTrainer'].ClipVideoEmbeddingProvider = ClipTextEmbeddingProvider
 
 resume_from_checkpoint = True
 torch.set_float32_matmul_precision('high')
@@ -59,7 +63,8 @@ summary(unet, [(1, unet_in_channels, 64, 64), (1, 256), (1, 512), (1, 256)], ver
 
 spatial_dataset = WebdatasetDataModule(
     ["/home/archive/CC12M/cc12m/{00000..01242}.tar", "/home/archive/CC3M/cc3m/{00000..00331}.tar"],
-    ["/home/archive/CocoWebdataset/mscoco/{00000..00059}.tar"],
+    ["/home/archive/CocoWebdatasetFullScale/mscoco/{00000..00040}.tar"],
+    ["/home/archive/CocoWebdatasetFullScale/mscoco/{00000..00059}.tar"],
     batch_size=batch_size,
     collate_type=CollateType.COLLATE_NONE_TUPLE,
     num_workers=num_workers
@@ -83,7 +88,7 @@ if not skip_spatio:
         sample_data_out_base_path=sample_out_base_path,
         checkpoint_every_val_epochs=1,
         embedding_provider=ClipEmbeddingProvider(clip_tools=clip_tools),
-        temporal_embedding_provider=ClipVideoEmbeddingProvider(clip_tools=clip_tools),
+        temporal_embedding_provider=ClipTextEmbeddingProvider(clip_tools=clip_tools),
         temporal=False
     )
 
@@ -118,6 +123,7 @@ temporal_dataset = VideoDatasetDataModule(
     first_part_only=True
 )
 
+# MODELS IN TRAINER UMBENENNEN
 model = SpatioTemporalDiffusionTrainer(
     unet, 
     transformable_data_module=temporal_dataset,
@@ -126,7 +132,7 @@ model = SpatioTemporalDiffusionTrainer(
     sample_data_out_base_path=sample_out_base_path,
     checkpoint_every_val_epochs=1,
     embedding_provider=ClipEmbeddingProvider(clip_tools=clip_tools),
-    temporal_embedding_provider=ClipVideoEmbeddingProvider(clip_tools=clip_tools),
+    temporal_embedding_provider=ClipTextEmbeddingProvider(clip_tools=clip_tools),
     temporal=True
 )
 

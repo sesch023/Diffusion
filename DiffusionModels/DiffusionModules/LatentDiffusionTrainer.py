@@ -27,6 +27,7 @@ from DiffusionModules.DiffusionModels import ExponentialMovingAverage
 from DiffusionModules.Util import *
 from DiffusionModules.DataModules import CIFAR10DataModule
 from DiffusionModules.DiffusionTrainer import ClipEmbeddingProvider
+from DiffusionModules.EmbeddingTools import *
 
 
 class LatentDiffusionTrainer(pl.LightningModule):
