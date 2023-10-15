@@ -69,8 +69,9 @@ class ClipTranslatorEmbeddingProvider(BaseEmbeddingProvider):
         super().__init__()
         self.clip_tools = ClipTools() if clip_tools is None else clip_tools
         self.translator_model_path = translator_model_path
-        self.model = ClipTranslatorTrainer.load_from_checkpoint(self.translator_model_path).model
+        self.model = ClipTranslatorTrainer.load_from_checkpoint(self.translator_model_path, map_location=self.clip_tools._device).model
         self.model.eval()
+        self.model.to(self.clip_tools._device)
 
     def get_embedding(self, images, labels):
         cap_emb = self.clip_tools.get_clip_emb_text(labels)

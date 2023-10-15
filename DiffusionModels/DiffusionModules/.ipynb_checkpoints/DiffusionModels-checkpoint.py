@@ -42,7 +42,8 @@ class BasicUNet(nn.Module):
             out_channels=out_channels,
             device=device,
             mha_head_channels=(64, 64, 64),
-            use_sample_conv=True
+            use_sample_conv=True,
+            use_functional_att_norm_out=False
         )
 
     def forward(self, x, t_emb=None, i_emb=None):
@@ -65,7 +66,9 @@ class UpscalerUNet(nn.Module):
             base_channels=192, 
             base_channel_mults=(1, 1, 2, 2, 4, 4),
             attention_at_downsample_factor=(8, 16, 32),
-            use_sample_conv=False
+            use_sample_conv=False,
+            use_functional_att_norm_out=True,
+            torch_mha=True
         )
 
     def forward(self, x, t_emb=None, i_emb=None):
@@ -88,7 +91,9 @@ class UNet(nn.Module):
         in_channels=3,
         out_channels=6,
         device=None,
-        use_sample_conv=True
+        use_sample_conv=True,
+        use_functional_att_norm_out=False,
+        torch_mha=False
     ):
         super().__init__()
 
@@ -153,7 +158,9 @@ class UNet(nn.Module):
                         use_scale_shift_norm=self._use_res_block_scale_shift_norm,
                         mha_head_channels=curr_mha_head_channel,
                         mha_heads=curr_mha_head,
-                        use_sample_conv=use_sample_conv
+                        use_sample_conv=use_sample_conv,
+                        use_functional_norm_out=use_functional_att_norm_out,
+                        torch_mha=torch_mha
                 )
             else:
                 get_block = lambda curr_ch_in: ResBlock(
@@ -217,7 +224,9 @@ class UNet(nn.Module):
                         use_scale_shift_norm=self._use_res_block_scale_shift_norm,
                         mha_head_channels=curr_mha_head_channel,
                         mha_heads=curr_mha_head,
-                        use_sample_conv=use_sample_conv
+                        use_sample_conv=use_sample_conv,
+                        use_functional_norm_out=use_functional_att_norm_out,
+                        torch_mha=torch_mha
                 )
             else:
                 get_block = lambda curr_ch_in: ResBlock(
@@ -261,15 +270,11 @@ class UNet(nn.Module):
             
             emb = i_emb + t_emb
 
-        wandb.log({"emb": emb})
-        wandb.log({"x": x})
         x = self._in_conv(x)
-        wandb.log({"xc1": x})
         outs = []
         i = 0
         for block in self._down_blocks:
             x = block(x, emb)
-            wandb.log({f"xd_{i}": x})
             outs.append(x)
             i += 1
 
@@ -280,7 +285,6 @@ class UNet(nn.Module):
             xp = outs.pop()
             x = torch.cat((xp, x), dim=1)
             x = block(x, emb)
-            wandb.log({f"xu_{i}": x})
             i += 1
 
         return self._out_conv(x)

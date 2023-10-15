@@ -63,8 +63,7 @@ class SigmoidScheduler(NoiseScheduler):
         # https://huggingface.co/blog/annotated-diffusion
         betas = torch.linspace(-6, 6, timesteps)
         return torch.sigmoid(betas) * (self._beta_end - self._beta_start) + self._beta_start
-        
-    
+          
 class VarianceMode(Enum):
     NOT_LEARNED = "NOT_LEARNED",
     LEARNED = "LEARNED",
@@ -73,7 +72,7 @@ class VarianceMode(Enum):
 DEBUG = False
 
 class DiffusionTools():
-    # TODO: Über Steps nachdenken
+    # TODO: REFRACTORING
     def __init__(
         self, 
         t_enc_size=256, 
@@ -242,11 +241,12 @@ class DiffusionTools():
                         model_var = torch.exp(model_log_variance)
                     else:
                         log_schedule = equalize_shape_of_first(torch.log(self._schedule)[ts], x_t)
-                        # Output is [-1, 1] -> Normalize to [0, 1]
+                        
 
                         if clamp_var:
                             model_var = torch.clamp(model_var, -2.0, 2.0)
-
+                            
+                        # Output is [-1, 1] -> Normalize to [0, 1]
                         model_var = (model_var + 1) / 2
                         model_log_variance = model_var * log_schedule + (1 - model_var) * posterior_log_variance
                         

@@ -22,74 +22,26 @@ import DiffusionModules.ClipTranslatorModules as tools
 import wandb
 from DiffusionModules.ClipTranslatorModules import (ClipTranslator,
                                                     ClipTranslatorTrainer)
+from DiffusionModules.FVD import FVDLoss
+
 from DiffusionModules.Diffusion import *
 from DiffusionModules.DiffusionModels import ExponentialMovingAverage
 from DiffusionModules.Util import *
 from DiffusionModules.DataModules import CIFAR10DataModule
 from DiffusionModules.ModelLoading import load_udm
+from DiffusionModules.EmbeddingTools import *
 from einops import rearrange
 
 sys.modules['ClipTranslatorModules'] = tools
 
-    
-class BaseEmbeddingProvider(ABC, nn.Module):
-    @abstractmethod
-    def get_embedding(self, images, labels):
-        pass
-
-    def forward(self, images, labels):
-        return self.get_embedding(images, labels)
-    
-class ClipTranslatorEmbeddingProvider(BaseEmbeddingProvider):
-    def __init__(self, translator_model_path, clip_tools=None):
-        super().__init__()
-        self.clip_tools = ClipTools() if clip_tools is None else clip_tools
-        self.translator_model_path = translator_model_path
-        self.model = ClipTranslatorTrainer.load_from_checkpoint(self.translator_model_path).model
-        self.model.eval()
-
-    def get_embedding(self, images, labels):
-        cap_emb = self.clip_tools.get_clip_emb_text(labels)
-        i_embs = self.model(cap_emb)
-        return i_embs
-    
-class ClipEmbeddingProvider(BaseEmbeddingProvider):
-    def __init__(self, clip_tools=None):
-        super().__init__()
-        self.clip_tools = ClipTools() if clip_tools is None else clip_tools
-        
-    def get_embedding(self, images, labels):
-        # In the New version this only uses images
-        i_embs = self.clip_tools.get_clip_emb_images(images)    
-        return i_embs
-    
-
-class ClipVideoEmbeddingProvider(BaseEmbeddingProvider):
-    def __init__(self, clip_tools=None):
-        super().__init__()
-        self.clip_tools = ClipTools() if clip_tools is None else clip_tools
-
-    def get_embedding(self, videos, labels):
-        # Use Captions for now
-        v_embs = self.clip_tools.get_clip_emb_text(labels)    
-        return v_embs
-
-    
-class CF10EmbeddingProvider(BaseEmbeddingProvider):
-    def __init__(self, classes=None):
-        super().__init__()
-        self.classes = classes if classes is not None else CIFAR10DataModule.classes
-        self.num_classes = len(self.classes)
-        
-    def get_embedding(self, images, labels):
-        labels = [self.classes.index(label) for label in labels]
-        labels = torch.Tensor(labels).long()
-        return nn.functional.one_hot(labels, self.num_classes).float()
 
 class UpscalerMode(Enum):
     NONE="NONE",
     DRLN="DRLN",
-    LDM="LDM"
+    LDM="LDM",
+    # Due to a bug with model loading and enum changes this had to be removed. 
+    # Instead for now a string is used!
+    # UDM="UDM"
     
 class DiffusionTrainer(pl.LightningModule):
     def __init__(self, unet, diffusion_tools, transformable_data_module, loss=None, val_score=None, embedding_provider=None, alt_validation_emb_provider=None, ema_beta=0.9999, cfg_train_ratio=0.1, cfg_scale=3, captions_preprocess=None, optimizer=None, sample_upscaler_mode=UpscalerMode.LDM, sample_scale_factor=4, checkpoint_every_val_epochs=10, no_up_samples_out=True, sample_images_out_base_path="samples/", c_device="cpu"):
@@ -144,7 +96,7 @@ class DiffusionTrainer(pl.LightningModule):
         if val_score is None:
             self.fid = FrechetInceptionDistance(feature=64)
             
-            def get_fid_score(samples, real):
+            def get_fid(samples, real):
                 self.fid.update((((samples + 1)/2)*255).byte(), real=False)
                 self.fid.update((((real + 1)/2)*255).byte(), real=True)
                 return self.fid.compute()
@@ -153,7 +105,7 @@ class DiffusionTrainer(pl.LightningModule):
             
             self.val_score = lambda samples, real, captions: {
                 "clip_score": self.clip_model((((samples + 1)/2)*255).int(), captions),
-                "fid_score": get_fid_score(samples, real)
+                "fid_score": get_fid(samples, real)
             }
         else:
             self.val_score = val_score
@@ -261,12 +213,15 @@ class DiffusionTrainer(pl.LightningModule):
     def configure_optimizers(self):
         # sch = torch.optim.lr_scheduler.StepLR(optimizer, step_size  = 10, gamma = lr_decay)      
         lr = self.optimizer.param_groups[-1]['lr']
-        sch = optim.lr_scheduler.ReduceLROnPlateau(self.optimizer, factor=0.5, patience=200, min_lr=lr/100)
+        sch = optim.lr_scheduler.ReduceLROnPlateau(self.optimizer, factor=0.8, patience=5, min_lr=lr/100)
         return {
             "optimizer": self.optimizer,
             "lr_scheduler" : {
                 "scheduler" : sch,
-                "monitor" : "train_loss"
+                "monitor" : "fid_score",
+                "interval": "epoch",
+                "frequency": 200,
+                "strict": False
             }
         }
     
@@ -311,13 +266,13 @@ class UpscalerDiffusionTrainer(pl.LightningModule):
         if val_score is None:
             self.fid = FrechetInceptionDistance(feature=64).to(self.device)
             
-            def get_fid_score(samples, real):
+            def get_fid(samples, real):
                 self.fid.update((((samples + 1)/2)*255).byte(), real=False)
                 self.fid.update((((real + 1)/2)*255).byte(), real=True)
                 return self.fid.compute()
             
             self.val_score = lambda samples, real, captions: {
-                "fid_score": get_fid_score(samples, real)
+                "fid_score": get_fid(samples, real)
             }
         else:
             self.val_score = val_score
@@ -434,12 +389,15 @@ class UpscalerDiffusionTrainer(pl.LightningModule):
     def configure_optimizers(self):
         # sch = torch.optim.lr_scheduler.StepLR(optimizer, step_size  = 10, gamma = lr_decay)      
         lr = self.optimizer.param_groups[-1]['lr']
-        sch = optim.lr_scheduler.ReduceLROnPlateau(self.optimizer, factor=0.5, patience=200, min_lr=lr/100)
+        sch = optim.lr_scheduler.ReduceLROnPlateau(self.optimizer, factor=0.8, patience=5, min_lr=lr/100)
         return {
             "optimizer": self.optimizer,
             "lr_scheduler" : {
                 "scheduler" : sch,
-                "monitor" : "train_loss"
+                "monitor" : "fid_score",
+                "interval": "epoch",
+                "frequency": 200,
+                "strict": False
             }
         }
 
@@ -499,20 +457,22 @@ class SpatioTemporalDiffusionTrainer(pl.LightningModule):
         if val_score is None:
             self.fid = FrechetInceptionDistance(feature=64)
             self.clip_model = CLIPScore(model_name_or_path="openai/clip-vit-base-patch32").eval()
+            self.fvd = FVDLoss(self.device)
 
             self.val_score = lambda samples, real, captions: {
                 "clip_score": self.get_clip_score(samples, captions),
-                "fid_score": self.get_fid_score(samples, real)
+                "fid_fvd_score": self.get_fvd_fid(samples, real),
             }
         else:
             self.val_score = val_score
             
         self.save_hyperparameters(ignore=["embedding_provider", "unet"])
         
-    def get_fid_score(self, s_data, r_data):
+    def get_fvd_fid(self, s_data, r_data):
         if s_data.ndim == 5:
-            s_data = rearrange(s_data, 'b c t h w -> (b t) c h w')
-            r_data = rearrange(r_data, 'b c t h w -> (b t) c h w')
+            score = self.fvd(s_data, r_data)
+            print(score)
+            return score
 
         self.fid.update((((s_data + 1)/2)*255).byte(), real=False)
         self.fid.update((((r_data + 1)/2)*255).byte(), real=True)
@@ -532,6 +492,7 @@ class SpatioTemporalDiffusionTrainer(pl.LightningModule):
                 scores.append(score)
 
         return sum(scores) / len(scores)
+    
 
     def training_step(self, batch, batch_idx):
         data, captions, *other = batch  
@@ -657,11 +618,14 @@ class SpatioTemporalDiffusionTrainer(pl.LightningModule):
     def configure_optimizers(self):
         # sch = torch.optim.lr_scheduler.StepLR(optimizer, step_size  = 10, gamma = lr_decay)      
         lr = self.optimizer.param_groups[-1]['lr']
-        sch = optim.lr_scheduler.ReduceLROnPlateau(self.optimizer, factor=0.5, patience=200, min_lr=lr/100)
+        sch = optim.lr_scheduler.ReduceLROnPlateau(self.optimizer, factor=0.8, patience=5, min_lr=lr/100)
         return {
             "optimizer": self.optimizer,
             "lr_scheduler" : {
                 "scheduler" : sch,
-                "monitor" : "train_loss"
+                "monitor" : "fid_fvd_score",
+                "interval": "epoch",
+                "frequency": 200,
+                "strict": False
             }
         }

@@ -21,7 +21,7 @@ import copy
 from abc import ABC, abstractmethod
 import glob
 
-resume_from_checkpoint = True
+resume_from_checkpoint = False
 
 torch.set_float32_matmul_precision('high')
 os.environ["TOKENIZERS_PARALLELISM"] = "true"
@@ -145,13 +145,13 @@ model = LatentDiffusionTrainer(
     vqgan=vqgan,
     latent_shape=(3, 64, 64),
     transformable_data_module=data,
-    diffusion_tools=DiffusionTools(device=device, steps=1000, noise_scheduler=CosineScheduler(), clamp_x_start_in_sample=True), 
+    diffusion_tools=DiffusionTools(device=device, steps=1000, noise_scheduler=LinearScheduler(), clamp_x_start_in_sample=True), 
     captions_preprocess=captions_preprocess,
     sample_images_out_base_path=sample_images_out_base_path,
     checkpoint_every_val_epochs=1,
     embedding_provider=ClipEmbeddingProvider(clip_tools=clip_tools),
     # alt_validation_emb_provider=ClipTranslatorEmbeddingProvider(clip_tools=clip_tools, translator_model_path=translator_model_path)
-    quantize_after_sample=False
+    quantize_after_sample=True
 )
 
 lr_monitor = cb.LearningRateMonitor(logging_interval='epoch')

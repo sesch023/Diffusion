@@ -121,11 +121,13 @@ class AdaptiveSpatioTemporalSelfAttention(nn.Module):
             if is_temporal:
                 self.temp_att =  nn.MultiheadAttention(channels, self.mha_heads, batch_first=True)
         else:     
-            self.qkv = nn.Conv1d(self.channels, self.channels*3, 1)
+            self.qkv_spatial = nn.Conv1d(self.channels, self.channels*3, 1)
             self.spatial_att = QKVAttention(self.mha_heads)
+            self.proj_out_spatial = zero_module(nn.Conv1d(self.channels, self.channels, 1))
             if is_temporal:
+                self.qkv_temp = nn.Conv1d(self.channels, self.channels*3, 1)
                 self.temp_att = QKVAttention(self.mha_heads)
-            self.proj_out = zero_module(nn.Conv1d(self.channels, self.channels, 1))
+                self.proj_out_temp = zero_module(nn.Conv1d(self.channels, self.channels, 1))          
 
         if base_spatial_attention_for_weight_init is not None:
             self.seed_with_spatial_attention(base_spatial_attention_for_weight_init)
@@ -159,9 +161,9 @@ class AdaptiveSpatioTemporalSelfAttention(nn.Module):
             att_out, _ = self.spatial_att(x, x, x)
         else:
             att_out = x.swapaxes(-2, -1)
-            qkv = self.qkv(att_out)
-            att_out = self.att(qkv)
-            att_out = self.proj_out(att_out)
+            qkv = self.qkv_spatial(att_out)
+            att_out = self.spatial_att(qkv)
+            att_out = self.proj_out_spatial(att_out)
             att_out = att_out.swapaxes(-1, -2)
 
         x = self.scale*x + att_out
@@ -182,9 +184,9 @@ class AdaptiveSpatioTemporalSelfAttention(nn.Module):
             att_out, _ = self.temp_att(x, x, x)
         else:
             att_out = x.swapaxes(-2, -1)
-            qkv = self.qkv(att_out)
-            att_out = self.att(qkv)
-            att_out = self.proj_out(att_out)
+            qkv = self.qkv_temp(att_out)
+            att_out = self.temp_att(qkv)
+            att_out = self.proj_out_temp(att_out)
             att_out = att_out.swapaxes(-1, -2)
 
         x = self.scale*x + att_out

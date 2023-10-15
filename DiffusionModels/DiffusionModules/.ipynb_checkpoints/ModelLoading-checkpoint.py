@@ -10,7 +10,7 @@ def load_udm(path, device, upscale_size=256):
     )  
     unet = UpscalerUNet(device=device).to(device)
     from DiffusionModules.DiffusionTrainer import UpscalerDiffusionTrainer
-    up_model_pipeline = UpscalerDiffusionTrainer.load_from_checkpoint(path, unet=unet, transformable_data_module=ds, map_location=device).to(device)
+    up_model_pipeline = UpscalerDiffusionTrainer.load_from_checkpoint(path, unet=unet, transformable_data_module=ds, map_location=device, device=device).to(device)
     up_model_pipeline._device = device
     up_model_pipeline.diffusion_tools._device = device
     return up_model_pipeline

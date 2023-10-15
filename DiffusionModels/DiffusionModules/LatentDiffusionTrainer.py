@@ -71,6 +71,8 @@ class LatentDiffusionTrainer(pl.LightningModule):
         self.save_images = lambda image, path: ImageLoader.save_image(image, path)
         self.latent_shape = latent_shape
         self.quantize_after_sample = quantize_after_sample
+        self.codebook_max = self.vqgan.quantize.embedding.weight.max()
+        self.codebook_min = self.vqgan.quantize.embedding.weight.min()
         
         if ema_beta is not None:   
             self.ema = ExponentialMovingAverage(ema_beta)
@@ -96,8 +98,17 @@ class LatentDiffusionTrainer(pl.LightningModule):
             self.val_score = val_score
             
         self.save_hyperparameters(ignore=["embedding_provider", "unet", "vqgan"])
-        
     
+    def diff_norm_tensor(self, in_tensor):
+        min_val, max_val = self.codebook_min, self.codebook_max
+        scaled_tensor = ((in_tensor - min_val) / (max_val - min_val)) * 2 - 1
+        return scaled_tensor
+
+    def codebook_norm_tensor(self, in_tensor):
+        min_val, max_val = self.codebook_min, self.codebook_max
+        scaled_tensor = (((in_tensor + 1) / 2) * (max_val - min_val)) + min_val
+        return scaled_tensor
+
     def training_step(self, batch, batch_idx):
         images, captions = batch
         captions = self.captions_preprocess(captions) if self.captions_preprocess is not None else captions
@@ -109,6 +120,8 @@ class LatentDiffusionTrainer(pl.LightningModule):
         images = self.transformable_data_module.transform_batch(images).to(self.device)    
         with torch.no_grad():
             latents, _, _ = self.vqgan.encode(images, emb=i_embs_req)
+            latents, _, _ = self.vqgan.quantize(latents)
+            latents = self.diff_norm_tensor(latents)
         loss = self.diffusion_tools.train_step(self.unet, self.loss, latents, i_embs)
        
         self.log("train_loss", loss, on_step=False, on_epoch=True, prog_bar=True, batch_size=images.shape[0])
@@ -126,6 +139,7 @@ class LatentDiffusionTrainer(pl.LightningModule):
 
         latent_batch_shape = (images.shape[0], *self.latent_shape)
         sampled_latents = self.diffusion_tools.sample_data(self.unet, latent_batch_shape, i_embs, self.cfg_scale)
+        sampled_latents = self.codebook_norm_tensor(sampled_latents)
         if self.quantize_after_sample:
             sampled_latents, _, _ = self.vqgan.quantize(sampled_latents)
         samples_images = self.vqgan.decode(sampled_latents, emb=i_embs, clamp=True)
@@ -133,6 +147,7 @@ class LatentDiffusionTrainer(pl.LightningModule):
 
         if self.ema is not None:
             ema_sampled_latents = self.diffusion_tools.sample_data(self.ema_unet, latent_batch_shape, i_embs, self.cfg_scale)
+            ema_sampled_latents = self.codebook_norm_tensor(ema_sampled_latents)
             if self.quantize_after_sample:
                 ema_sampled_latents, _, _ = self.vqgan.quantize(ema_sampled_latents)
             samples_images = self.vqgan.decode(ema_sampled_latents, emb=i_embs, clamp=True)
@@ -201,11 +216,14 @@ class LatentDiffusionTrainer(pl.LightningModule):
     def configure_optimizers(self):
         # sch = torch.optim.lr_scheduler.StepLR(optimizer, step_size  = 10, gamma = lr_decay)      
         lr = self.optimizer.param_groups[-1]['lr']
-        sch = optim.lr_scheduler.ReduceLROnPlateau(self.optimizer, factor=0.5, patience=200, min_lr=lr/100)
+        sch = optim.lr_scheduler.ReduceLROnPlateau(self.optimizer, factor=0.8, patience=2, min_lr=lr/100)
         return {
             "optimizer": self.optimizer,
             "lr_scheduler" : {
                 "scheduler" : sch,
-                "monitor" : "train_loss"
+                "monitor" : "fid_score",
+                "interval": "epoch",
+                "frequency": 200,
+                "strict": False
             }
         }

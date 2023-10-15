@@ -21,7 +21,7 @@ import copy
 from abc import ABC, abstractmethod
 import glob
 
-resume_from_checkpoint = True
+resume_from_checkpoint = False
 
 torch.set_float32_matmul_precision('high')
 os.environ["TOKENIZERS_PARALLELISM"] = "true"

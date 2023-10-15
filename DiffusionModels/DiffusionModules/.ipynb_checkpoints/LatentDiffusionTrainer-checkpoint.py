@@ -27,6 +27,7 @@ from DiffusionModules.DiffusionModels import ExponentialMovingAverage
 from DiffusionModules.Util import *
 from DiffusionModules.DataModules import CIFAR10DataModule
 from DiffusionModules.DiffusionTrainer import ClipEmbeddingProvider
+from DiffusionModules.EmbeddingTools import *
 
 
 class LatentDiffusionTrainer(pl.LightningModule):
@@ -108,6 +109,7 @@ class LatentDiffusionTrainer(pl.LightningModule):
         images = self.transformable_data_module.transform_batch(images).to(self.device)    
         with torch.no_grad():
             latents, _, _ = self.vqgan.encode(images, emb=i_embs_req)
+            latents, _, _ = self.vqgan.quantize(latents)
         loss = self.diffusion_tools.train_step(self.unet, self.loss, latents, i_embs)
        
         self.log("train_loss", loss, on_step=False, on_epoch=True, prog_bar=True, batch_size=images.shape[0])
@@ -200,11 +202,14 @@ class LatentDiffusionTrainer(pl.LightningModule):
     def configure_optimizers(self):
         # sch = torch.optim.lr_scheduler.StepLR(optimizer, step_size  = 10, gamma = lr_decay)      
         lr = self.optimizer.param_groups[-1]['lr']
-        sch = optim.lr_scheduler.ReduceLROnPlateau(self.optimizer, factor=0.5, patience=200, min_lr=lr/100)
+        sch = optim.lr_scheduler.ReduceLROnPlateau(self.optimizer, factor=0.8, patience=5, min_lr=lr/100)
         return {
             "optimizer": self.optimizer,
             "lr_scheduler" : {
                 "scheduler" : sch,
-                "monitor" : "train_loss"
+                "monitor" : "fid_score",
+                "interval": "epoch",
+                "frequency": 200,
+                "strict": False
             }
         }

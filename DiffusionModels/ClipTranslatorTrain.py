@@ -59,12 +59,13 @@ lr_monitor = cb.LearningRateMonitor(logging_interval='step')
 trainer = pl.Trainer(
     limit_train_batches=int(train_batches / 10), 
     limit_val_batches=int(val_batches / 10),
+    limit_test_batches=1000,
     check_val_every_n_epoch=1, 
     num_sanity_val_steps=0, 
     max_epochs=20, 
     logger=wandb_logger, 
     callbacks=[EarlyStopping(monitor="val_loss", mode="min", patience=20), lr_monitor],
-    devices=gpus
+    devices=gpus,
 )
 
 trainer.fit(model, data, ckpt_path=resume_from_checkpoint)

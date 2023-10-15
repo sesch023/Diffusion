@@ -11,6 +11,7 @@ from torchmetrics.multimodal import CLIPScore
 import lightning.pytorch.callbacks as cb
 import webdataset as wds
 from PIL import Image
+from torchinfo import summary
 import numpy as np
 import wandb
 import copy
@@ -26,6 +27,7 @@ resume_from_checkpoint = True
 gpus=[0]
 device = f"cuda:{str(gpus[0])}" if torch.cuda.is_available() else "cpu"
 unet = BasicUNet(device=device).to(device)
+summary(unet, [(1, 3, 64, 64), (1, 256), (1, 512)], verbose=1)
 wandb.init()
 wandb_logger = WandbLogger()
 batch_size = 4

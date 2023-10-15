@@ -62,6 +62,7 @@ class ClipTranslatorTrainer(pl.LightningModule):
         self.optimizer = optim.AdamW(self.model.parameters(), lr=1e-3, weight_decay=0.0001) if optimizer is None else optimizer
         self.validation_step_outputs = []
         self.test_step_outputs = []
+        self.test_step_identity_outputs = []
         self.best_loss = float("inf")
         self.model_out = model_out
         self.save_hyperparameters()
@@ -91,7 +92,10 @@ class ClipTranslatorTrainer(pl.LightningModule):
     
     def test_step(self, batch, batch_idx):
         images, captions = batch
-        loss = self.eval_items(images, captions)  
+        loss, cap_emb, img_emb = self.eval_items(images, captions, True)  
+        with torch.no_grad():
+            identity_loss = self.loss(img_emb, cap_emb)
+            self.test_step_identity_outputs.append(identity_loss)
         self.test_step_outputs.append(loss)
         return loss
     
@@ -108,8 +112,11 @@ class ClipTranslatorTrainer(pl.LightningModule):
         
     def on_test_epoch_end(self):
         avg_loss = sum(self.test_step_outputs) / len(self.test_step_outputs)
+        avg_identity_loss = sum(self.test_step_identity_outputs) / len(self.test_step_identity_outputs)
         self.log("test_loss", avg_loss, on_step=False, on_epoch=True, prog_bar=True)
+        self.log("test_id_loss", avg_identity_loss, on_step=False, on_epoch=True, prog_bar=True)
         self.test_step_outputs.clear()
+        self.test_step_identity_outputs.clear()
     
     def configure_optimizers(self):
         lr = self.optimizer.param_groups[-1]['lr']

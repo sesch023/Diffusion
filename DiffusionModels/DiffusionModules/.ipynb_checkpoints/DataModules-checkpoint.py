@@ -163,7 +163,7 @@ class CIFAR10DataModule(TransformableImageDataModule):
             
     @staticmethod
     def collate_class_labels(x):
-        return x[0], [CIFAR10DataModule.classes[e] for e in x[1]]
+        return [img for img, index in x], [CIFAR10DataModule.classes[index] for img, index in x]
 
     def train_dataloader(self):
         return torch.utils.data.DataLoader(self.train_set, batch_size=self.batch_size, shuffle=True, num_workers=self.num_workers, collate_fn=self.collate)
@@ -295,9 +295,9 @@ class VideoDatasetDataModule(TransformableDataModule):
             normalize=False
         )
         
-        self.t_data = None
+        self.test_data = None
         if self.test_csv_path is not None and self.test_data_path is not None:
-            self.t_data = VideoDataset(
+            self.test_data = VideoDataset(
                 self.test_csv_path, 
                 self.test_data_path, 
                 target_resolution=self.target_resolution, 
@@ -332,12 +332,12 @@ class VideoDatasetDataModule(TransformableDataModule):
         )
     
     def test_dataloader(self):
-        if self.t_data is None:
+        if self.test_data is None:
             print("Warning: No test paths defined, returning a Validation Dataloader!")
             return self.val_dataloader()
         else:
             return DataLoader(
-                self.t_data,
+                self.test_data,
                 batch_size=self.batch_size ,
                 shuffle=True,
                 collate_fn=self.collate,

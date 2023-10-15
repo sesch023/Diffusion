@@ -34,7 +34,7 @@ wandb_logger = WandbLogger()
 batch_size = 2
 wandb.save("*.py*")
 num_workers = 2
-skip_spatio = False
+skip_spatio = True
 print(device)
 
 unet_in_channels = 3
@@ -98,7 +98,7 @@ if not skip_spatio:
         check_val_every_n_epoch=200, 
         limit_val_batches=2, 
         num_sanity_val_steps=0, 
-        max_epochs=20000, 
+        max_epochs=2000, 
         logger=wandb_logger, 
         gradient_clip_val=0.008, 
         gradient_clip_algorithm="norm", 

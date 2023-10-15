@@ -12,6 +12,7 @@ from enum import Enum
 from torchviz import make_dot
 import wandb
 from einops import rearrange
+from DiffusionModules.EmbeddingTools import ClipTools
 
 
 def equalize_shape_of_first(t1, t2):
@@ -19,36 +20,6 @@ def equalize_shape_of_first(t1, t2):
         t1 = t1[..., None]
     return t1
 
-
-class ClipTools(nn.Module):
-    def __init__(self, clip_model="ViT-B/32", device=None):
-        super().__init__()
-        self._device = ("cuda" if torch.cuda.is_available() else "cpu") if device is None else device
-        self._clip_model, self._clip_preprocess = clip.load(clip_model, device=self._device)
-        self._clip_model.eval()
-    
-    def get_clip_emb_size(self):
-        return self._clip_model.visual.output_dim 
-    
-    def get_clip_emb_images(self, images):
-        images = torch.stack([self._clip_preprocess(i) for i in images])
-        return self._clip_model.encode_image(images.to(self._device)).float()
-
-    def get_clip_emb_videos(self, videos):
-        b, t = videos.shape[0], videos.shape[1]
-        stacked_frames = rearrange(videos, 'b t c h w -> (b t) c h w')
-        videos = torch.stack([self._clip_preprocess(i) for i in stacked_frames])
-        embs = self._clip_model.encode_image(videos.to(self._device)).float()
-        embs = rearrange(embs, '(b t) e -> b t e', b=b, t=t)
-        # This could be very bad
-        return embs.mean(dim=1)
-    
-    def get_clip_emb_text(self, texts):
-        # TODO: Truncate hack is stupid for long sentences
-        return self._clip_model.encode_text(clip.tokenize(texts, truncate = True).to(self._device)).float()
-        
-    def forward(self, images, texts):
-        return self.get_clip_emb_images(images), self.get_clip_emb_text(texts)
     
 class NoiseScheduler(ABC):
     @abstractmethod
@@ -92,8 +63,7 @@ class SigmoidScheduler(NoiseScheduler):
         # https://huggingface.co/blog/annotated-diffusion
         betas = torch.linspace(-6, 6, timesteps)
         return torch.sigmoid(betas) * (self._beta_end - self._beta_start) + self._beta_start
-        
-    
+          
 class VarianceMode(Enum):
     NOT_LEARNED = "NOT_LEARNED",
     LEARNED = "LEARNED",
@@ -102,7 +72,7 @@ class VarianceMode(Enum):
 DEBUG = False
 
 class DiffusionTools():
-    # TODO: Über Steps nachdenken
+    # TODO: REFRACTORING
     def __init__(
         self, 
         t_enc_size=256, 
@@ -271,11 +241,12 @@ class DiffusionTools():
                         model_var = torch.exp(model_log_variance)
                     else:
                         log_schedule = equalize_shape_of_first(torch.log(self._schedule)[ts], x_t)
-                        # Output is [-1, 1] -> Normalize to [0, 1]
+                        
 
                         if clamp_var:
                             model_var = torch.clamp(model_var, -2.0, 2.0)
-
+                            
+                        # Output is [-1, 1] -> Normalize to [0, 1]
                         model_var = (model_var + 1) / 2
                         model_log_variance = model_var * log_schedule + (1 - model_var) * posterior_log_variance
                         
