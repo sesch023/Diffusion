@@ -163,12 +163,10 @@ class DiffusionTrainer(pl.LightningModule):
             values = [outs[i][key] for i in range(len(outs)) if key in outs[i]]
             avg = sum(values) / len(values)
             avg_dict[key] = avg
-       
-        avg_loss = sum(avg_dict.values()) / len(avg_dict.values())
 
         self.log_dict(avg_dict, on_step=False, on_epoch=True, prog_bar=True)
         self.val_epoch += 1
-        if self.val_epoch % self.checkpoint_every_val_epochs == 0 and avg_loss < self.prev_checkpoint_val_avg:
+        if self.val_epoch % self.checkpoint_every_val_epochs == 0 and avg_dict["fid_score"] < self.prev_checkpoint_val_avg:
             epoch = self.current_epoch
             path = f"{self.sample_images_out_base_path}/{str(epoch)}_model.ckpt"
             print(f"Saving Checkpoint at: {path}")
@@ -177,7 +175,7 @@ class DiffusionTrainer(pl.LightningModule):
             if self.prev_checkpoint is not None:
                 os.remove(self.prev_checkpoint)
             self.prev_checkpoint = path
-            self.prev_checkpoint_val_avg = avg_loss
+            self.prev_checkpoint_val_avg = avg_dict["fid_score"]
         
         path = f"{self.sample_images_out_base_path}/latest.ckpt"
         print(f"Saving Checkpoint at: {path}")
@@ -341,12 +339,10 @@ class UpscalerDiffusionTrainer(pl.LightningModule):
             values = [outs[i][key] for i in range(len(outs)) if key in outs[i]]
             avg = sum(values) / len(values)
             avg_dict[key] = avg
-
-        avg_loss = sum(avg_dict.values()) / len(avg_dict.values())
        
         self.log_dict(avg_dict, on_step=False, on_epoch=True, prog_bar=True)
         self.val_epoch += 1
-        if self.val_epoch % self.checkpoint_every_val_epochs == 0 and avg_loss < self.prev_checkpoint_val_avg:
+        if self.val_epoch % self.checkpoint_every_val_epochs == 0 and avg_dict["fid_score"] < self.prev_checkpoint_val_avg:
             epoch = self.current_epoch
             path = f"{self.sample_images_out_base_path}/{str(epoch)}_model.ckpt"
             print(f"Saving Checkpoint at: {path}")
@@ -355,7 +351,7 @@ class UpscalerDiffusionTrainer(pl.LightningModule):
             if self.prev_checkpoint is not None:
                 os.remove(self.prev_checkpoint)
             self.prev_checkpoint = path
-            self.prev_checkpoint_val_avg = avg_loss
+            self.prev_checkpoint_val_avg = avg_dict["fid_score"]
         
         path = f"{self.sample_images_out_base_path}/latest.ckpt"
         print(f"Saving Checkpoint at: {path}")
@@ -567,12 +563,10 @@ class SpatioTemporalDiffusionTrainer(pl.LightningModule):
             values = [outs[i][key] for i in range(len(outs)) if key in outs[i]]
             avg = sum(values) / len(values)
             avg_dict[key] = avg
-       
-        avg_loss = sum(avg_dict.values()) / len(avg_dict.values())
 
         self.log_dict(avg_dict, on_step=False, on_epoch=True, prog_bar=True)
         self.val_epoch += 1
-        if self.val_epoch % self.checkpoint_every_val_epochs == 0 and avg_loss < self.prev_checkpoint_val_avg:
+        if self.val_epoch % self.checkpoint_every_val_epochs == 0 and avg_dict["fid_fvd_score"] < self.prev_checkpoint_val_avg:
             epoch = self.current_epoch
             path = f"{self.sample_data_out_base_path}/{str(epoch)}_model.ckpt"
             print(f"Saving Checkpoint at: {path}")
@@ -581,7 +575,7 @@ class SpatioTemporalDiffusionTrainer(pl.LightningModule):
             if self.prev_checkpoint is not None:
                 os.remove(self.prev_checkpoint)
             self.prev_checkpoint = path
-            self.prev_checkpoint_val_avg = avg_loss
+            self.prev_checkpoint_val_avg = avg_dict["fid_fvd_score"]
         
         path = f"{self.sample_data_out_base_path}/latest.ckpt"
         print(f"Saving Checkpoint at: {path}")

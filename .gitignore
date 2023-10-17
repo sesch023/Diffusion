@@ -8,5 +8,6 @@ DiffusionModels/wandb/*
 .vscode/
 lightning_logs/
 samples*/
+*report*/
 *reconstructions*/
 wandb/

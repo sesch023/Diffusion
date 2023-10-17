@@ -296,7 +296,7 @@ class CIFAR10DataModule(TransformableImageDataModule):
         self.separate_val_split = separate_val_split
         self.separate_val_split_ratio = separate_val_split_ratio
         self.collate_base = self.collate
-        self.collate = lambda x: CIFAR10DataModule.collate_class_labels(self.collate_base(x))
+        self.collate = lambda x: CIFAR10DataModule.collate_class_labels(self.collate_base(list(zip(*x))))
         
         if self.separate_val_split:
             trainset = torchvision.datasets.ImageFolder(f"{self.cifar_path}/train")
@@ -314,7 +314,7 @@ class CIFAR10DataModule(TransformableImageDataModule):
         :param x: Data to collate.
         :return: Collated data.
         """        
-        return [img for img, index in x], [CIFAR10DataModule.classes[index] for img, index in x]
+        return x[0], [CIFAR10DataModule.classes[index] for index in x[1]]
 
     def train_dataloader(self):
         """
