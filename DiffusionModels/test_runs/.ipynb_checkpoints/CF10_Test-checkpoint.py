@@ -19,7 +19,7 @@ path = "../samples_cifar_final/4499_model.ckpt"
 model = load_cf10(path, device)
 model.sample_images_out_base_path = report_path
 batch_size = 16
-start_n = 0
+start_n = 39
 n = 1000
 
 scores = []
@@ -42,7 +42,6 @@ def sample_from_diffusion_trainer(trainer, captions, images, device, batch_idx, 
         scores.append(score)
         # trainer.save_sampled_images(sampled_images, captions, batch_idx, f"{str(i)}_up")
         trainer.save_sampled_images(sampled_images, captions, batch_idx, f"{str(i)}_no_up", no_upscale=True)
-        trainer.save_sampled_images(images, captions, batch_idx, f"{str(i)}_no_up_real", no_upscale=True)
 
     mean_fid = calculate_mean(scores, "fid_score")
     mean_clip = calculate_mean(scores, "clip_score")

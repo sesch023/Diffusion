@@ -71,6 +71,7 @@ class ClipTranslatorTrainer(pl.LightningModule):
         from DiffusionModules.EmbeddingTools import ClipTools
         
         self.clip_tools = ClipTools(device=self.dev) if clip_tools is None else clip_tools
+        self.clip_tools.eval()
         self.loss = nn.MSELoss() if loss is None else loss
         self.optimizer = optim.AdamW(self.model.parameters(), lr=1e-3, weight_decay=0.0001) if optimizer is None else optimizer
         self.validation_step_outputs = []
@@ -93,8 +94,8 @@ class ClipTranslatorTrainer(pl.LightningModule):
         """        
         cap_emb = self.clip_tools.get_clip_emb_text(captions).to(self.dev) 
         img_emb = self.clip_tools.get_clip_emb_images(images).to(self.dev) 
-        model_out = self.model(cap_emb)
-        loss = self.loss(img_emb, model_out)
+        model_out = self.model(cap_emb.detach())
+        loss = self.loss(img_emb.detach(), model_out)
         return (loss, cap_emb, img_emb) if ret_emb else loss
     
     def training_step(self, batch, batch_idx):

@@ -97,9 +97,12 @@ class DiffusionTrainer(pl.LightningModule):
             self.fid = FrechetInceptionDistance(feature=64)
             
             def get_fid(samples, real):
+                self.fid.reset()
                 self.fid.update((((samples + 1)/2)*255).byte(), real=False)
                 self.fid.update((((real + 1)/2)*255).byte(), real=True)
-                return self.fid.compute()
+                fid = self.fid.compute()
+                self.fid.reset()
+                return fid
             
             self.clip_model = CLIPScore(model_name_or_path="openai/clip-vit-base-patch32").eval()
             
@@ -265,9 +268,12 @@ class UpscalerDiffusionTrainer(pl.LightningModule):
             self.fid = FrechetInceptionDistance(feature=64).to(self.device)
             
             def get_fid(samples, real):
+                self.fid.reset()
                 self.fid.update((((samples + 1)/2)*255).byte(), real=False)
                 self.fid.update((((real + 1)/2)*255).byte(), real=True)
-                return self.fid.compute()
+                fid = self.fid.compute()
+                self.fid.reset()
+                return fid
             
             self.val_score = lambda samples, real, captions: {
                 "fid_score": get_fid(samples, real)
@@ -467,13 +473,14 @@ class SpatioTemporalDiffusionTrainer(pl.LightningModule):
     def get_fvd_fid(self, s_data, r_data):
         if s_data.ndim == 5:
             score = self.fvd(s_data, r_data)
-            print(score)
             return score
 
+        self.fid.reset()
         self.fid.update((((s_data + 1)/2)*255).byte(), real=False)
         self.fid.update((((r_data + 1)/2)*255).byte(), real=True)
-    
-        return self.fid.compute()
+        fid = self.fid.compute()
+        self.fid.reset()
+        return fid
 
     def get_clip_score(self, s_data, captions):
         scores = []

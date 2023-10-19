@@ -25,6 +25,7 @@ from DiffusionModules.ClipTranslatorModules import (ClipTranslator,
 from DiffusionModules.DataModules import CIFAR10DataModule
 from DiffusionModules.ModelLoading import load_udm
 from einops import rearrange
+import random
 
 class ClipTools(nn.Module):
     def __init__(self, clip_model="ViT-B/32", device=None):
@@ -46,7 +47,6 @@ class ClipTools(nn.Module):
         videos = torch.stack([self._clip_preprocess(i) for i in stacked_frames])
         embs = self._clip_model.encode_image(videos.to(self._device)).float()
         embs = rearrange(embs, '(b t) e -> b t e', b=b, t=t)
-        # This could be very bad
         return embs.mean(dim=1)
     
     def get_clip_emb_text(self, texts):
@@ -63,7 +63,19 @@ class BaseEmbeddingProvider(ABC, nn.Module):
 
     def forward(self, images, labels):
         return self.get_embedding(images, labels)
-    
+
+class ClipRandomImageTextTranslatorEmbeddingProvider(BaseEmbeddingProvider):
+    def __init__(self, translator_model_path, clip_tools=None, ):
+        super().__init__()
+        self.clip_tools = ClipTools() if clip_tools is None else clip_tools
+        self.clip_translator_provider = ClipTranslatorEmbeddingProvider(translator_model_path, self.clip_tools)
+        self.clip_image_provider = ClipEmbeddingProvider(self.clip_tools)
+        self.clip_text_provider = ClipTextEmbeddingProvider(self.clip_tools)
+        self.providers = [self.clip_translator_provider, self.clip_image_provider, self.clip_text_provider]
+
+    def get_embedding(self, images, labels):
+        return random.choice(self.providers).get_embedding(images, labels)
+
 class ClipTranslatorEmbeddingProvider(BaseEmbeddingProvider):
     def __init__(self, translator_model_path, clip_tools=None):
         super().__init__()

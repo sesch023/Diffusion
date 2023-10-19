@@ -84,9 +84,12 @@ class LatentDiffusionTrainer(pl.LightningModule):
             self.fid = FrechetInceptionDistance(feature=64)
             
             def get_fid_score(samples, real):
+                self.fid.reset()
                 self.fid.update((((samples + 1)/2)*255).byte(), real=False)
                 self.fid.update((((real + 1)/2)*255).byte(), real=True)
-                return self.fid.compute()
+                fid = self.fid.compute()
+                self.fid.reset()
+                return fid
             
             self.clip_model = CLIPScore(model_name_or_path="openai/clip-vit-base-patch32").eval()
             

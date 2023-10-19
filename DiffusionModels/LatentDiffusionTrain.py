@@ -4,6 +4,7 @@ from DiffusionModules.DiffusionModels import *
 from DiffusionModules.DataModules import *
 from DiffusionModules.LatentDiffusionTrainer import *
 from DiffusionModules.LatentVQGANModel import *
+from DiffusionModules.ModelLoading import load_vqgan
 import os
 import torch
 from torch import optim, nn, utils, Tensor
@@ -21,7 +22,7 @@ import copy
 from abc import ABC, abstractmethod
 import glob
 
-resume_from_checkpoint = False
+resume_from_checkpoint = True
 
 torch.set_float32_matmul_precision('high')
 os.environ["TOKENIZERS_PARALLELISM"] = "true"
@@ -34,86 +35,10 @@ wandb_logger = WandbLogger()
 batch_size = 4
 num_workers = 4
 wandb.save("*.py*")
-
-def load_vqgan():
-    z_channels = 3
-    shared_args = dict(
-        z_channels=z_channels,
-        ch=128,
-        resolution=256,
-        num_res_blocks=2,
-        attn_resolutions=[],
-        ch_mult=(1,2,4),
-        dropout=0.0,
-        emb_size=512,
-        out_emb_size=1024
-    )
-
-    encoder = Encoder(
-        in_channels=3,
-        double_z=False,
-        **shared_args
-    ).to(device)
-
-    print("Encoder")
-    summary(encoder, [(1, encoder.in_channels, shared_args["resolution"], shared_args["resolution"]), (1, 512)], verbose=1)
-
-    decoder = Decoder(
-        out_channels=3,
-        **shared_args
-    ).to(device)
-
-    decoder_in_res = shared_args["resolution"] // (2 ** (len(shared_args["ch_mult"])-1))
-    print("Decoder")
-    summary(decoder, [(1, z_channels, decoder_in_res, decoder_in_res), (1, 512)], verbose=1)
-
-    discriminator = NLayerDiscriminator(
-        input_nc=decoder.out_channels,
-        n_layers=3,
-        ndf=64
-    ).to(device)
-
-    print("Discriminator")
-    summary(discriminator, (1, decoder.out_channels, shared_args["resolution"], shared_args["resolution"]), verbose=1)
-
-    loss = VQLPIPSWithDiscriminator(
-        discriminator=discriminator,
-        disc_start=0,
-        disc_weight=0.75,
-        codebook_weight=1.0,
-        disc_conditional=False
-    ).to(device)
-
-    clip_tools = ClipTools(device=device)
-    emb_prov = ClipEmbeddingProvider(clip_tools=clip_tools)
-
-    reconstructions_out_base_path = "emb_reconstructions/"
-    z_channels = 3
-    return VQModel.load_from_checkpoint(
-        "vqgan.ckpt", 
-        device=device, 
-        encoder=encoder, 
-        decoder=decoder, 
-        loss=loss, 
-        transformable_data_module=None,
-        embedding_provider=emb_prov,
-        strict=False,
-        map_location=device
-    ).to(device)
-
-
-data = WebdatasetDataModule(
-    ["/home/archive/CC12M/cc12m/{00000..01242}.tar", "/home/archive/CC3M/cc3m/{00000..00331}.tar"],
-    ["/home/archive/CocoWebdatasetFullScale/mscoco/{00000..00040}.tar"],
-    batch_size=batch_size,
-    collate_type=CollateType.COLLATE_NONE_TUPLE,
-    num_workers=num_workers,
-    img_in_target_size=256
-)  
         
 captions_preprocess = lambda captions: [cap[:77] for cap in captions]
 
-vqgan = load_vqgan()
+vqgan = load_vqgan("vqgan.ckpt", device=device)
 
 print("Creating UNet")
 unet_in_channels = 3

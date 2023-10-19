@@ -44,8 +44,8 @@ data = WebdatasetDataModule(
     batch_size=batch_size
 )  
 
-model_out="clip_translator/model.ckpt"
-model_out_final = "clip_translator/final.ckpt"
+model_out="clip_translator_final/model.ckpt"
+model_out_final = "clip_translator_final/final.ckpt"
 old_checkpoint = glob.glob(model_out)
 resume_from_checkpoint = None if not resume_from_checkpoint else old_checkpoint[0] if len(old_checkpoint) > 0 else None
 model = ClipTranslatorTrainer(translator, device=device, model_out=model_out)
@@ -64,7 +64,7 @@ trainer = pl.Trainer(
     num_sanity_val_steps=0, 
     max_epochs=20, 
     logger=wandb_logger, 
-    callbacks=[EarlyStopping(monitor="val_loss", mode="min", patience=20), lr_monitor],
+    callbacks=[EarlyStopping(monitor="val_loss", mode="min", patience=3), lr_monitor],
     devices=gpus,
 )
 
