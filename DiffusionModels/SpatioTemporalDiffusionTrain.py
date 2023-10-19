@@ -109,8 +109,8 @@ if not skip_spatio:
     trainer.fit(model, spatial_dataset, ckpt_path=resume_from_checkpoint_path)
 
 temporal_dataset = VideoDatasetDataModule(
-    #"/home/shared-data/webvid/results_10M_train.csv", 
-    #"/home/shared-data/webvid/data/videos",
+    "/home/shared-data/webvid/results_10M_train.csv", 
+    "/home/shared-data/webvid/data/videos",
     "/home/shared-data/webvid/results_10M_val.csv", 
     "/home/shared-data/webvid/data_val/videos",
     "/home/shared-data/webvid/results_10M_val.csv", 
@@ -123,7 +123,6 @@ temporal_dataset = VideoDatasetDataModule(
     first_part_only=True
 )
 
-# MODELS IN TRAINER UMBENENNEN
 model = SpatioTemporalDiffusionTrainer(
     unet, 
     transformable_data_module=temporal_dataset,

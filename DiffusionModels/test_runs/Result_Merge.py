@@ -3,8 +3,8 @@ import os
 import shutil
 from tqdm import tqdm
 
-target_folder = "VQGAN_report/real/"
-target_glob = glob("VQGAN_report/*orig/*.png")
+target_folder = "CF10_report/fake/"
+target_glob = glob("CF10_report/*no_up/*.png")
 
 if not os.path.exists(target_folder):
     os.makedirs(target_folder)

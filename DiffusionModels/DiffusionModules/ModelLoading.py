@@ -233,3 +233,59 @@ def load_latent_diffusion(path, vqgan_path, device, img_size=256, alt_prov_mode=
     return latent_diffusion_trainer
 
 
+def load_spatio_temporal(path, device):
+    unet_in_channels = 3
+    unet_in_size = 64
+    unet = SpatioTemporalUNet(
+        base_channels=256,
+        base_channel_mults=(1, 2, 3, 4),
+        res_blocks_per_resolution=3,
+        use_res_block_scale_shift_norm=True,
+        attention_at_downsample_factor=(2, 4, 8),
+        mha_heads=(4, 4, 4),
+        mha_head_channels=None,
+        i_emb_size=512,
+        t_emb_size=256,
+        f_emb_size=256,
+        mid_emb_size=1024,
+        in_channels=unet_in_channels,
+        out_channels=unet_in_channels*2,
+        device=device
+    ).to(device)
+
+    temporal_dataset = VideoDatasetDataModule(
+        None,
+        None,
+        None,
+        None,
+        batch_size=1,
+        num_workers=1,
+        nth_frames=1,
+        max_frames_per_part=16,
+        min_frames_per_part=4,
+        first_part_only=True
+    )
+
+    from DiffusionModules.EmbeddingTools import ClipTools, ClipEmbeddingProvider, ClipTranslatorEmbeddingProvider, ClipTextEmbeddingProvider
+    from DiffusionModules.DiffusionTrainer import SpatioTemporalDiffusionTrainer
+
+    clip_tools = ClipTools(device=device)
+    emb_prov = ClipEmbeddingProvider(clip_tools=clip_tools)
+    text_emb_prov = ClipTextEmbeddingProvider(clip_tools=clip_tools)
+
+    spatio_temporal_trainer = SpatioTemporalDiffusionTrainer.load_from_checkpoint(
+        path,
+        transformable_data_module=temporal_dataset,
+        unet=unet,
+        embedding_provider=emb_prov,
+        temporal_embedding_provider=text_emb_prov,
+        device=device,
+        map_location=device,
+        temporal=True,
+        after_load_fvd=True
+    ).to(device)
+    spatio_temporal_trainer.diffusion_tools._device = device
+    spatio_temporal_trainer.eval()
+    spatio_temporal_trainer.load_fvd()
+    return spatio_temporal_trainer
+

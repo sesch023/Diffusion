@@ -424,7 +424,8 @@ class SpatioTemporalDiffusionTrainer(pl.LightningModule):
         checkpoint_every_val_epochs=10, 
         sample_data_out_base_path="samples_spatio_temporal/",
         disable_temporal_caption_embs=True,
-        temporal=True
+        temporal=True,
+        after_load_fvd=False
     ):
         super().__init__()
         self.unet = unet
@@ -459,7 +460,8 @@ class SpatioTemporalDiffusionTrainer(pl.LightningModule):
         if val_score is None:
             self.fid = FrechetInceptionDistance(feature=64)
             self.clip_model = CLIPScore(model_name_or_path="openai/clip-vit-base-patch32").eval()
-            self.fvd = FVDLoss(self.device)
+            if not after_load_fvd:
+                self.load_fvd()
 
             self.val_score = lambda samples, real, captions: {
                 "clip_score": self.get_clip_score(samples, captions),
@@ -469,7 +471,10 @@ class SpatioTemporalDiffusionTrainer(pl.LightningModule):
             self.val_score = val_score
             
         self.save_hyperparameters(ignore=["embedding_provider", "unet"])
-        
+    
+    def load_fvd(self):
+        self.fvd = FVDLoss(self.device)
+
     def get_fvd_fid(self, s_data, r_data):
         if s_data.ndim == 5:
             score = self.fvd(s_data, r_data)

@@ -501,28 +501,34 @@ class VideoDatasetDataModule(TransformableDataModule):
         self.padding_value = padding_value
         self.nth_frames = nth_frames
         self.max_frames_per_part = max_frames_per_part
-        self.t_data = VideoDataset(
-            self.train_csv_path, 
-            self.train_data_path, 
-            target_resolution=self.target_resolution, 
-            max_frames_per_part=self.max_frames_per_part,
-            nth_frames=self.nth_frames,
-            first_part_only=first_part_only,
-            min_frames_per_part=min_frames_per_part,
-            target_ordering="c t h w",
-            normalize=False
-        )
-        self.v_data = VideoDataset(
-            self.val_csv_path, 
-            self.val_data_path, 
-            target_resolution=self.target_resolution, 
-            target_ordering="c t h w",
-            max_frames_per_part=self.max_frames_per_part,
-            nth_frames=self.nth_frames,
-            first_part_only=first_part_only,
-            min_frames_per_part=min_frames_per_part,
-            normalize=False
-        )
+
+        self.t_data = None
+        if self.train_csv_path is not None and self.train_data_path is not None:
+            self.t_data = VideoDataset(
+                self.train_csv_path, 
+                self.train_data_path, 
+                target_resolution=self.target_resolution, 
+                max_frames_per_part=self.max_frames_per_part,
+                nth_frames=self.nth_frames,
+                first_part_only=first_part_only,
+                min_frames_per_part=min_frames_per_part,
+                target_ordering="c t h w",
+                normalize=False
+            )
+
+        self.v_data = None
+        if self.val_csv_path is not None and self.val_data_path is not None:
+            self.v_data = VideoDataset(
+                self.val_csv_path, 
+                self.val_data_path, 
+                target_resolution=self.target_resolution, 
+                target_ordering="c t h w",
+                max_frames_per_part=self.max_frames_per_part,
+                nth_frames=self.nth_frames,
+                first_part_only=first_part_only,
+                min_frames_per_part=min_frames_per_part,
+                normalize=False
+            )
         
         self.test_data = None
         if self.test_csv_path is not None and self.test_data_path is not None:
@@ -542,7 +548,7 @@ class VideoDatasetDataModule(TransformableDataModule):
 
     def train_dataloader(self):
         """
-        Returns a dataloader for the training data.
+        Returns a dataloader for the training data if train_csv_path and train_data_path were not None.
 
         :return: Dataloader for the training data.
         """        
@@ -553,11 +559,11 @@ class VideoDatasetDataModule(TransformableDataModule):
             collate_fn=self.collate,
             pin_memory=False,
             num_workers=self.num_workers
-        )
+        ) if self.t_data is not None else None
     
     def val_dataloader(self):
         """
-        Returns a dataloader for the validation data.
+        Returns a dataloader for the validation data if the validation data is defined.
 
         :return: Dataloader for the validation data.
         """        
@@ -568,7 +574,7 @@ class VideoDatasetDataModule(TransformableDataModule):
             collate_fn=self.collate,
             pin_memory=False,
             num_workers=self.num_workers
-        )
+        ) if self.v_data is not None else None
     
     def test_dataloader(self):
         """
@@ -596,7 +602,7 @@ class VideoDatasetDataModule(TransformableDataModule):
         :param batch: Batch of data.
         :return: Transformed batch of data.
         """        
-        return self.t_data.normalize(batch)
+        return VideoDataset.normalize(batch)
 
     def reverse_transform_batch(self, batch):
         """
@@ -605,7 +611,7 @@ class VideoDatasetDataModule(TransformableDataModule):
         :param batch: Transformed batch of data.
         :return: Batch of data.
         """        
-        return self.t_data.reverse_normalize(batch)
+        return VideoDataset.reverse_normalize(batch)
 
     def transform(self, data):
         """
@@ -614,7 +620,7 @@ class VideoDatasetDataModule(TransformableDataModule):
         :param data: Element of data.
         :return: Transformed element of data.
         """        
-        return self.t_data.normalize(data)
+        return VideoDataset.normalize(data)
 
     def reverse_transform(self, data):
         """
@@ -623,4 +629,4 @@ class VideoDatasetDataModule(TransformableDataModule):
         :param data: Transformed element of data.
         :return: Element of data.
         """        
-        return self.t_data.reverse_normalize(data)
+        return VideoDataset.reverse_normalize(data)
