@@ -11,3 +11,5 @@ samples*/
 *report*/
 *reconstructions*/
 wandb/
+*.conda/
+DiffusionModels/.conda/
