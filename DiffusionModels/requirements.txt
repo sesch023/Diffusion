@@ -1,0 +1,25 @@
+torch==2.0.0+cu117
+WebvidReader @ git+https://github.com/sesch023/WebvidReader.git
+make_a_video_pytorch==0.3.1
+torchinfo==1.8.0
+pytorch_clip_guided_loss==2021.12.25.0
+webdataset==0.2.60
+ftfy==6.1.1
+regex==2023.6.3
+tqdm==4.65.0
+CLIP @ git+https://github.com/openai/CLIP.git
+pytorch-lightning==2.1.0
+wandb==0.12.21
+torchmetrics==1.2.0
+lightning==2.1.0
+torch-enhance==0.1.8
+super-image==0.1.7
+torchviz==0.0.2
+torch-fidelity==0.3.0
+diffusers @ git+https://github.com/huggingface/diffusers.git@v0.21.4
+accelerate==0.21.0
+transformers @ git+https://github.com/huggingface/transformers@v4.32.1
+lpips==0.1.4
+onnx==1.14.1
+img2dataset==1.42.0
+pytorch-lightning[extra]==2.1.0

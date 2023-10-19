@@ -1,0 +1,11 @@
+prefix=/home/sesch023/DiffusionModels/DiffusionModels/.conda
+exec_prefix=/home/sesch023/DiffusionModels/DiffusionModels/.conda
+libdir=/home/sesch023/DiffusionModels/DiffusionModels/.conda/lib
+includedir=/home/sesch023/DiffusionModels/DiffusionModels/.conda/include
+
+Name: uuid
+Description: Universally unique id library
+Version: 2.38.1
+Requires:
+Cflags: -I${includedir}/uuid
+Libs: -L${libdir} -luuid
