@@ -13,3 +13,6 @@ samples*/
 wandb/
 *.conda/
 DiffusionModels/.conda/
+.ipynb_checkpoints/
+DiffusionModels/.ipynb_checkpoints/
+DiffusionModels/__pychache__/
