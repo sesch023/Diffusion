@@ -1,0 +1,9 @@
+loading vgg16 for improved precision and recall...done
+WARNING: num_found_images(1004) < num_samples(5000)
+WARNING: num_found_images(1004) < num_samples(5000)
+precision: 0.49203187250996017
+recall: 0.10258964143426295
+found 1 images in CosDiffusion_report/real/
+realism of first image in real: 8855.631867955655
+found 1 images in CosDiffusion_report/text_emb/
+realism of first image in fake: 0.9406723368297665

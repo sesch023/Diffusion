@@ -11,7 +11,7 @@ from DiffusionModules.ModelLoading import load_spatio_temporal
 
 from einops import rearrange
 
-gpus=[2]
+gpus=[0]
 device = f"cuda:{str(gpus[0])}" if torch.cuda.is_available() else "cpu"
 
 report_path = "SpatioTemporalDiffusion_report/"
@@ -36,10 +36,10 @@ def sample_from_diffusion_trainer(trainer, captions, videos, device, batch_idx, 
     videos = trainer.transformable_data_module.transform_batch(videos).to(device)
     f_emb = torch.stack([trainer.diffusion_tools.get_pos_encoding(f) for f in fps]).to(device) 
     videos_shape = videos.shape
+    print(videos_shape)
     sampled_videos = trainer.diffusion_tools.sample_data(trainer.ema_unet, videos_shape, embs, trainer.cfg_scale, clamp_var=True, f_emb=f_emb, temporal=True)
     score = trainer.val_score(sampled_videos, videos, captions)
-
-    scores.append(score)
+    scores.append({key: value.item() for key, value in score.items()})
 
     trainer.save_sampled_data(sampled_videos, captions, batch_idx, "fake")
     trainer.save_sampled_data(videos, captions, batch_idx, "real")

@@ -14,5 +14,8 @@ wandb/
 *.conda/
 DiffusionModels/.conda/
 .ipynb_checkpoints/
+**/.ipynb_checkpoints/
+**/__pycache__/
 DiffusionModels/.ipynb_checkpoints/
-DiffusionModels/__pychache__/
+DiffusionModels/__pycache__/
+**/*report.zip

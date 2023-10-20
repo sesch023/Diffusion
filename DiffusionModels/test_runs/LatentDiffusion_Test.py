@@ -19,7 +19,7 @@ vqgan_path = "../vqgan.ckpt"
 model = load_latent_diffusion(path, vqgan_path, device, alt_prov_mode="TEXT")
 model.sample_images_out_base_path = report_path
 batch_size = 4
-start_n = 0
+start_n = 112
 n = 1000
 
 scores = []
@@ -52,13 +52,13 @@ def sample_from_diffusion_trainer(trainer, captions, images, device, batch_idx, 
     latent_batch_shape = (images.shape[0], *trainer.latent_shape)
 
     score_translator = sample(trainer, latent_batch_shape, embs_translator, captions, images, batch_idx, "translator")
-    scores_translator.append(score_translator)
+    scores_translator.append({key: value.item() for key, value in score_translator.items()})
 
     score = sample(trainer, latent_batch_shape, embs, captions, images, batch_idx, "img_emb")
-    scores.append(score)
+    scores.append({key: value.item() for key, value in score.items()})
 
     score_text = sample(trainer, latent_batch_shape, embs_text, captions, images, batch_idx, "text_emb")
-    scores_text.append(score_text)
+    scores_text.append({key: value.item() for key, value in score_text.items()})
 
     trainer.save_sampled_images(images, captions, batch_idx, "real")
 

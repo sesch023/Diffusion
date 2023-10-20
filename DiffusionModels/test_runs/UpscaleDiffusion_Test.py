@@ -16,7 +16,7 @@ report_path = "UpscaleDiffusion_report/"
 path = "~/upscaler.ckpt"
 model = load_udm(path, device, upscale_size=256)
 model.sample_images_out_base_path = report_path
-start_n = 0
+start_n = 132
 n = 1000
 batch_size = 4
 
@@ -37,7 +37,7 @@ def sample_from_diffusion_trainer(trainer, captions, images, device, batch_idx):
 
     sampled_images = trainer.diffusion_tools.sample_data(trainer.ema_unet, image_shape, embs, trainer.cfg_scale, x_appendex=low_res)
     score = trainer.val_score(sampled_images, images, captions)
-    scores.append(score)
+    scores.append({key: value.item() for key, value in score.items()})
     trainer.save_sampled_images(sampled_images, captions, batch_idx, f"{str(i)}_up")
     trainer.save_sampled_images(low_res, captions, batch_idx, f"{str(i)}_low_res")
     trainer.save_sampled_images(images, captions, batch_idx, f"{str(i)}_real")

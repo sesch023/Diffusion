@@ -39,7 +39,7 @@ def sample_from_diffusion_trainer(trainer, captions, images, device, batch_idx, 
     for i in range(samples_per_caption):
         sampled_images = trainer.diffusion_tools.sample_data(trainer.ema_unet, image_shape, embs, trainer.cfg_scale)
         score = trainer.val_score(sampled_images, images, captions)
-        scores.append(score)
+        scores.append({key: value.item() for key, value in score.items()})
         # trainer.save_sampled_images(sampled_images, captions, batch_idx, f"{str(i)}_up")
         trainer.save_sampled_images(sampled_images, captions, batch_idx, f"{str(i)}_no_up", no_upscale=True)
         trainer.save_sampled_images(images, captions, batch_idx, f"{str(i)}_no_up_real", no_upscale=True)

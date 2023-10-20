@@ -18,7 +18,7 @@ path = "../samples_cos_diffusion/7099_model.ckpt"
 model = load_wdm(path, device, alt_prov_mode="TRANSLATOR")
 model.sample_images_out_base_path = report_path
 batch_size = 4
-start_n = 114
+start_n = 231
 n = 1000
 
 scores = []
@@ -42,17 +42,17 @@ def sample_from_diffusion_trainer(trainer, captions, images, device, batch_idx, 
     sampled_images_translator = trainer.diffusion_tools.sample_data(trainer.ema_unet, image_shape, embs_translator, trainer.cfg_scale)
 
     score_translator = trainer.val_score(sampled_images_translator, images, captions)
-    scores_translator.append(score_translator)
+    scores_translator.append({key: value.item() for key, value in score_translator.items()})
 
     sampled_images = trainer.diffusion_tools.sample_data(trainer.ema_unet, image_shape, embs, trainer.cfg_scale)
 
     score = trainer.val_score(sampled_images, images, captions)
-    scores.append(score)
+    scores.append({key: value.item() for key, value in score.items()})
 
     sampled_images_text = trainer.diffusion_tools.sample_data(trainer.ema_unet, image_shape, embs_text, trainer.cfg_scale)
 
     score_text = trainer.val_score(sampled_images_text, images, captions)
-    scores_text.append(score_text)
+    scores_text.append({key: value.item() for key, value in score_text.items()})
 
     trainer.save_sampled_images(sampled_images_translator, captions, batch_idx, "translator", no_upscale=True)
     trainer.save_sampled_images(sampled_images, captions, batch_idx, "img_emb", no_upscale=True)
