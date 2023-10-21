@@ -87,13 +87,13 @@ dl = WebdatasetDataModule(
 
 clip_tools = ClipTools(device=device)
 translator_model_path = "../clip_translator/model.ckpt"
-text_emb_provider = ClipTranslatorEmbeddingProvider(clip_tools=clip_tools, translator_model_path=translator_model_path)
+translator_emb_provider = ClipTranslatorEmbeddingProvider(clip_tools=clip_tools, translator_model_path=translator_model_path)
 
 limit_batches = n//batch_size + 1
 i = start_n
 
 for images, captions in dl:
-    sample_from_diffusion_trainer(model, captions, images, device, i, text_emb_provider)
+    sample_from_diffusion_trainer(model, captions, images, device, i, translator_emb_provider)
     print(f"Batch {i} of {limit_batches - 1} done.")
     i += 1
     if i >= limit_batches:

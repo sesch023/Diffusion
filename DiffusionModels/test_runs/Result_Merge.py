@@ -3,8 +3,8 @@ import os
 import shutil
 from tqdm import tqdm
 
-target_folder = "CosDiffusion_report/translator/"
-target_glob = glob("CosDiffusion_report/*translator/*.png")
+target_folder = "UpscaleDiffusion_report/real/"
+target_glob = glob("UpscaleDiffusion_report/*real/*.png")
 
 if not os.path.exists(target_folder):
     os.makedirs(target_folder)

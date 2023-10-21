@@ -22,7 +22,7 @@ gpus=[1]
 device = f"cuda:{str(gpus[0])}" if torch.cuda.is_available() else "cpu"
 wandb.init()
 wandb_logger = WandbLogger()
-batch_size = 16
+batch_size = 4
 
 cifar_data = CIFAR10DataModule(batch_size=batch_size)
 unet = BasicUNet(i_emb_size=len(CIFAR10DataModule.classes), device=device).to(device)

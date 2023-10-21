@@ -15,12 +15,12 @@ gpus=[0]
 device = f"cuda:{str(gpus[0])}" if torch.cuda.is_available() else "cpu"
 
 report_path = "SpatioTemporalDiffusion_report/"
-path = "../samples_spatio_temporal/10799_model.ckpt"
+path = "../samples_spatio_temporal/latest.ckpt"
 model = load_spatio_temporal(path, device)
-model.sample_images_out_base_path = report_path
-start_n = 0
+model.sample_data_out_base_path = report_path
+start_n = 44
 n = 1000
-batch_size = 4
+batch_size = 2
 
 scores = []
 
@@ -31,24 +31,27 @@ def calculate_mean(items, key):
 
     return sum_d / len(items)
 
-def sample_from_diffusion_trainer(trainer, captions, videos, device, batch_idx, fps):
+def sample_from_diffusion_trainer(trainer, captions, videos, device, batch_idx, fps, temporal_dm, non_temporal_dm):
+    trainer.transformable_data_module = temporal_dm
     embs = trainer.temporal_embedding_provider.get_embedding(videos, captions).to(device)
     videos = trainer.transformable_data_module.transform_batch(videos).to(device)
     f_emb = torch.stack([trainer.diffusion_tools.get_pos_encoding(f) for f in fps]).to(device) 
     videos_shape = videos.shape
-    print(videos_shape)
     sampled_videos = trainer.diffusion_tools.sample_data(trainer.ema_unet, videos_shape, embs, trainer.cfg_scale, clamp_var=True, f_emb=f_emb, temporal=True)
-    score = trainer.val_score(sampled_videos, videos, captions)
-    scores.append({key: value.item() for key, value in score.items()})
+    score = trainer.val_score(sampled_videos.detach(), videos.detach(), captions)
+    scores.append(score)
+    print(score)
 
     trainer.save_sampled_data(sampled_videos, captions, batch_idx, "fake")
     trainer.save_sampled_data(videos, captions, batch_idx, "real")
 
-    videos_frame = rearrange(videos, "b t c h w -> (b t) c h w")
-    sampled_videos_frame = rearrange(sampled_videos, "b t c h w -> (b t) c h w")
+    trainer.transformable_data_module = non_temporal_dm
+    videos_frame = rearrange(videos, "b c t h w -> (b t) c h w")
+    sampled_videos_frame = rearrange(sampled_videos, "b c t h w -> (b t) c h w")
 
     trainer.save_sampled_data(sampled_videos_frame, captions, batch_idx, "fake_frame")
     trainer.save_sampled_data(videos_frame, captions, batch_idx, "real_frame")
+    trainer.transformable_data_module = temporal_dm
 
     mean_fid_fvd = calculate_mean(scores, "fid_fvd_score")
     mean_clip = calculate_mean(scores, "clip_score")
@@ -69,13 +72,22 @@ temporal_dataset = VideoDatasetDataModule(
     min_frames_per_part=4,
     first_part_only=True
 )
+
+dm = WebdatasetDataModule(
+    [""],
+    [""],
+    batch_size=batch_size,
+    num_workers=1
+)  
+model.transformable_data_module = temporal_dataset
+model.writer_module = temporal_dataset.v_data
 dl = temporal_dataset.val_dataloader()
 
 limit_batches = n//batch_size + 1
 i = start_n
 
 for videos, captions, lengths, fps in dl:
-    sample_from_diffusion_trainer(model, captions, videos, device, i, fps)
+    sample_from_diffusion_trainer(model, captions, videos, device, i, fps, temporal_dataset, dm)
     print(f"Batch {i} of {limit_batches - 1} done.")
     i += 1
     if i >= limit_batches:

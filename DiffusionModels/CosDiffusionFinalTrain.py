@@ -24,7 +24,7 @@ os.environ["TOKENIZERS_PARALLELISM"] = "true"
 os.environ["WDS_VERBOSE_CACHE"] = "1"
 
 resume_from_checkpoint = True
-gpus=[2]
+gpus=[1]
 device = f"cuda:{str(gpus[0])}" if torch.cuda.is_available() else "cpu"
 unet = BasicUNet(device=device).to(device)
 summary(unet, [(1, 3, 64, 64), (1, 256), (1, 512)], verbose=1)
@@ -71,7 +71,7 @@ lr_monitor = cb.LearningRateMonitor(logging_interval='epoch')
 trainer = pl.Trainer(
     limit_train_batches=200, 
     check_val_every_n_epoch=400, 
-    limit_val_batches=5, 
+    limit_val_batches=2, 
     num_sanity_val_steps=0, 
     max_epochs=20000, 
     logger=wandb_logger, 

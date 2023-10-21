@@ -233,7 +233,7 @@ def load_latent_diffusion(path, vqgan_path, device, img_size=256, alt_prov_mode=
     return latent_diffusion_trainer
 
 
-def load_spatio_temporal(path, device):
+def load_spatio_temporal(path, device, after_load_fvd=False):
     unet_in_channels = 3
     unet_in_size = 64
     unet = SpatioTemporalUNet(
@@ -282,7 +282,7 @@ def load_spatio_temporal(path, device):
         device=device,
         map_location=device,
         temporal=True,
-        after_load_fvd=True
+        after_load_fvd=after_load_fvd
     ).to(device)
     spatio_temporal_trainer.diffusion_tools._device = device
     spatio_temporal_trainer.eval()

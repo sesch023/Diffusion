@@ -447,7 +447,10 @@ class SpatioTemporalDiffusionTrainer(pl.LightningModule):
         self.prev_checkpoint_val_avg = float("inf")
         self.validation_step_outputs = []
         self.temporal = temporal
-        self.save_videos= lambda video, path: self.transformable_data_module.t_data.write_video(video, path)
+        self.writer_module = self.transformable_data_module.t_data if self.transformable_data_module.t_data is not None else self.transformable_data_module.v_data
+        if self.writer_module is None:
+            print("Warning: No transformable dataset module found for saving samples!")
+        self.save_videos= lambda video, path: self.writer_module.write_video(video, path)
         self.save_images = lambda image, path: image.save(path)
         self.disable_temporal_caption_embs = disable_temporal_caption_embs
         

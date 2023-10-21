@@ -97,9 +97,12 @@ class DiffusionTrainer(pl.LightningModule):
             self.fid = FrechetInceptionDistance(feature=64)
             
             def get_fid(samples, real):
+                self.fid.reset()
                 self.fid.update((((samples + 1)/2)*255).byte(), real=False)
                 self.fid.update((((real + 1)/2)*255).byte(), real=True)
-                return self.fid.compute()
+                fid = self.fid.compute()
+                self.fid.reset()
+                return fid
             
             self.clip_model = CLIPScore(model_name_or_path="openai/clip-vit-base-patch32").eval()
             
@@ -163,12 +166,10 @@ class DiffusionTrainer(pl.LightningModule):
             values = [outs[i][key] for i in range(len(outs)) if key in outs[i]]
             avg = sum(values) / len(values)
             avg_dict[key] = avg
-       
-        avg_loss = sum(avg_dict.values()) / len(avg_dict.values())
 
         self.log_dict(avg_dict, on_step=False, on_epoch=True, prog_bar=True)
         self.val_epoch += 1
-        if self.val_epoch % self.checkpoint_every_val_epochs == 0 and avg_loss < self.prev_checkpoint_val_avg:
+        if self.val_epoch % self.checkpoint_every_val_epochs == 0 and avg_dict["fid_score"] < self.prev_checkpoint_val_avg:
             epoch = self.current_epoch
             path = f"{self.sample_images_out_base_path}/{str(epoch)}_model.ckpt"
             print(f"Saving Checkpoint at: {path}")
@@ -177,7 +178,7 @@ class DiffusionTrainer(pl.LightningModule):
             if self.prev_checkpoint is not None:
                 os.remove(self.prev_checkpoint)
             self.prev_checkpoint = path
-            self.prev_checkpoint_val_avg = avg_loss
+            self.prev_checkpoint_val_avg = avg_dict["fid_score"]
         
         path = f"{self.sample_images_out_base_path}/latest.ckpt"
         print(f"Saving Checkpoint at: {path}")
@@ -213,7 +214,7 @@ class DiffusionTrainer(pl.LightningModule):
     def configure_optimizers(self):
         # sch = torch.optim.lr_scheduler.StepLR(optimizer, step_size  = 10, gamma = lr_decay)      
         lr = self.optimizer.param_groups[-1]['lr']
-        sch = optim.lr_scheduler.ReduceLROnPlateau(self.optimizer, factor=0.8, patience=5, min_lr=lr/100)
+        sch = optim.lr_scheduler.ReduceLROnPlateau(self.optimizer, factor=0.8, patience=2, min_lr=lr/100)
         return {
             "optimizer": self.optimizer,
             "lr_scheduler" : {
@@ -267,9 +268,12 @@ class UpscalerDiffusionTrainer(pl.LightningModule):
             self.fid = FrechetInceptionDistance(feature=64).to(self.device)
             
             def get_fid(samples, real):
+                self.fid.reset()
                 self.fid.update((((samples + 1)/2)*255).byte(), real=False)
                 self.fid.update((((real + 1)/2)*255).byte(), real=True)
-                return self.fid.compute()
+                fid = self.fid.compute()
+                self.fid.reset()
+                return fid
             
             self.val_score = lambda samples, real, captions: {
                 "fid_score": get_fid(samples, real)
@@ -341,12 +345,10 @@ class UpscalerDiffusionTrainer(pl.LightningModule):
             values = [outs[i][key] for i in range(len(outs)) if key in outs[i]]
             avg = sum(values) / len(values)
             avg_dict[key] = avg
-
-        avg_loss = sum(avg_dict.values()) / len(avg_dict.values())
        
         self.log_dict(avg_dict, on_step=False, on_epoch=True, prog_bar=True)
         self.val_epoch += 1
-        if self.val_epoch % self.checkpoint_every_val_epochs == 0 and avg_loss < self.prev_checkpoint_val_avg:
+        if self.val_epoch % self.checkpoint_every_val_epochs == 0 and avg_dict["fid_score"] < self.prev_checkpoint_val_avg:
             epoch = self.current_epoch
             path = f"{self.sample_images_out_base_path}/{str(epoch)}_model.ckpt"
             print(f"Saving Checkpoint at: {path}")
@@ -355,7 +357,7 @@ class UpscalerDiffusionTrainer(pl.LightningModule):
             if self.prev_checkpoint is not None:
                 os.remove(self.prev_checkpoint)
             self.prev_checkpoint = path
-            self.prev_checkpoint_val_avg = avg_loss
+            self.prev_checkpoint_val_avg = avg_dict["fid_score"]
         
         path = f"{self.sample_images_out_base_path}/latest.ckpt"
         print(f"Saving Checkpoint at: {path}")
@@ -389,7 +391,7 @@ class UpscalerDiffusionTrainer(pl.LightningModule):
     def configure_optimizers(self):
         # sch = torch.optim.lr_scheduler.StepLR(optimizer, step_size  = 10, gamma = lr_decay)      
         lr = self.optimizer.param_groups[-1]['lr']
-        sch = optim.lr_scheduler.ReduceLROnPlateau(self.optimizer, factor=0.8, patience=5, min_lr=lr/100)
+        sch = optim.lr_scheduler.ReduceLROnPlateau(self.optimizer, factor=0.8, patience=2, min_lr=lr/100)
         return {
             "optimizer": self.optimizer,
             "lr_scheduler" : {
@@ -422,7 +424,8 @@ class SpatioTemporalDiffusionTrainer(pl.LightningModule):
         checkpoint_every_val_epochs=10, 
         sample_data_out_base_path="samples_spatio_temporal/",
         disable_temporal_caption_embs=True,
-        temporal=True
+        temporal=True,
+        after_load_fvd=False
     ):
         super().__init__()
         self.unet = unet
@@ -444,7 +447,10 @@ class SpatioTemporalDiffusionTrainer(pl.LightningModule):
         self.prev_checkpoint_val_avg = float("inf")
         self.validation_step_outputs = []
         self.temporal = temporal
-        self.save_videos= lambda video, path: self.transformable_data_module.t_data.write_video(video, path)
+        writer_module = self.transformable_data_module.t_data if self.transformable_data_module.t_data is not None else self.transformable_data_module.v_data
+        if writer_module is None:
+            print("Warning: No transformable dataset module found for saving samples!")
+        self.save_videos= lambda video, path: writer_module.t_data.write_video(video, path)
         self.save_images = lambda image, path: image.save(path)
         self.disable_temporal_caption_embs = disable_temporal_caption_embs
         
@@ -457,7 +463,8 @@ class SpatioTemporalDiffusionTrainer(pl.LightningModule):
         if val_score is None:
             self.fid = FrechetInceptionDistance(feature=64)
             self.clip_model = CLIPScore(model_name_or_path="openai/clip-vit-base-patch32").eval()
-            self.fvd = FVDLoss(self.device)
+            if not after_load_fvd:
+                self.load_fvd()
 
             self.val_score = lambda samples, real, captions: {
                 "clip_score": self.get_clip_score(samples, captions),
@@ -467,17 +474,21 @@ class SpatioTemporalDiffusionTrainer(pl.LightningModule):
             self.val_score = val_score
             
         self.save_hyperparameters(ignore=["embedding_provider", "unet"])
-        
+    
+    def load_fvd(self):
+        self.fvd = FVDLoss(self.device)
+
     def get_fvd_fid(self, s_data, r_data):
         if s_data.ndim == 5:
             score = self.fvd(s_data, r_data)
-            print(score)
             return score
 
+        self.fid.reset()
         self.fid.update((((s_data + 1)/2)*255).byte(), real=False)
         self.fid.update((((r_data + 1)/2)*255).byte(), real=True)
-    
-        return self.fid.compute()
+        fid = self.fid.compute()
+        self.fid.reset()
+        return fid
 
     def get_clip_score(self, s_data, captions):
         scores = []
@@ -567,12 +578,10 @@ class SpatioTemporalDiffusionTrainer(pl.LightningModule):
             values = [outs[i][key] for i in range(len(outs)) if key in outs[i]]
             avg = sum(values) / len(values)
             avg_dict[key] = avg
-       
-        avg_loss = sum(avg_dict.values()) / len(avg_dict.values())
 
         self.log_dict(avg_dict, on_step=False, on_epoch=True, prog_bar=True)
         self.val_epoch += 1
-        if self.val_epoch % self.checkpoint_every_val_epochs == 0 and avg_loss < self.prev_checkpoint_val_avg:
+        if self.val_epoch % self.checkpoint_every_val_epochs == 0 and avg_dict["fid_fvd_score"] < self.prev_checkpoint_val_avg:
             epoch = self.current_epoch
             path = f"{self.sample_data_out_base_path}/{str(epoch)}_model.ckpt"
             print(f"Saving Checkpoint at: {path}")
@@ -581,7 +590,7 @@ class SpatioTemporalDiffusionTrainer(pl.LightningModule):
             if self.prev_checkpoint is not None:
                 os.remove(self.prev_checkpoint)
             self.prev_checkpoint = path
-            self.prev_checkpoint_val_avg = avg_loss
+            self.prev_checkpoint_val_avg = avg_dict["fid_fvd_score"]
         
         path = f"{self.sample_data_out_base_path}/latest.ckpt"
         print(f"Saving Checkpoint at: {path}")
@@ -618,7 +627,7 @@ class SpatioTemporalDiffusionTrainer(pl.LightningModule):
     def configure_optimizers(self):
         # sch = torch.optim.lr_scheduler.StepLR(optimizer, step_size  = 10, gamma = lr_decay)      
         lr = self.optimizer.param_groups[-1]['lr']
-        sch = optim.lr_scheduler.ReduceLROnPlateau(self.optimizer, factor=0.8, patience=5, min_lr=lr/100)
+        sch = optim.lr_scheduler.ReduceLROnPlateau(self.optimizer, factor=0.8, patience=2, min_lr=lr/100)
         return {
             "optimizer": self.optimizer,
             "lr_scheduler" : {

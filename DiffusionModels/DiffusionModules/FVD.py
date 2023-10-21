@@ -16,8 +16,8 @@ class FVDLoss(nn.Module):
             self.detector = torch.jit.load(f).eval().to(device)
         
     def forward(self, videos_fake, targets):
-        feats_fake = self.detector(videos_fake, **FVDLoss.detector_kwargs).cpu().numpy()
-        feats_real = self.detector(targets, **FVDLoss.detector_kwargs).cpu().numpy()
+        feats_fake = self.detector(videos_fake, **FVDLoss.detector_kwargs).cpu().detach().numpy()
+        feats_real = self.detector(targets, **FVDLoss.detector_kwargs).cpu().detach().numpy()
         
         return FVDLoss.compute_fvd(feats_fake, feats_real)
     
