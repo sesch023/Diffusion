@@ -1,25 +1,15 @@
 import torch
-import torch.nn as nn
-import torch.nn.functional as f
 import numpy as np
-from torchinfo import summary
-import math
-import clip
 from abc import ABC, abstractmethod
-from DiffusionModules.Modules import *
 from tqdm import tqdm
 from enum import Enum
-from torchviz import make_dot
 import wandb
-from einops import rearrange
-from DiffusionModules.EmbeddingTools import ClipTools
-
+from DiffusionModules.Modules import VLBDiffusionLoss
 
 def equalize_shape_of_first(t1, t2):
     while len(t1.shape) < len(t2.shape):
         t1 = t1[..., None]
     return t1
-
     
 class NoiseScheduler(ABC):
     @abstractmethod
@@ -72,7 +62,6 @@ class VarianceMode(Enum):
 DEBUG = False
 
 class DiffusionTools():
-    # TODO: REFRACTORING
     def __init__(
         self, 
         t_enc_size=256, 

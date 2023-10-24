@@ -1,25 +1,17 @@
-from DiffusionModules.Diffusion import *
-from DiffusionModules.DiffusionTrainer import *
-from DiffusionModules.DiffusionModels import *
-from DiffusionModules.DataModules import *
-from DiffusionModules.LatentDiffusionTrainer import *
-from DiffusionModules.LatentVQGANModel import *
 import os
+import glob
+
 import torch
-from torch import optim, nn, utils, Tensor
-import torchvision
-import torchvision.transforms as transforms
 import lightning.pytorch as pl
 from lightning.pytorch.loggers import WandbLogger
-from torchmetrics.multimodal import CLIPScore
 import lightning.pytorch.callbacks as cb
-import webdataset as wds
-from PIL import Image
-import numpy as np
 import wandb
-import copy
-from abc import ABC, abstractmethod
-import glob
+
+from DiffusionModules.Diffusion import DiffusionTools, LinearScheduler
+from DiffusionModules.EmbeddingTools import ClipTools, ClipEmbeddingProvider
+from DiffusionModules.DiffusionModels import UNet
+from DiffusionModules.DataModules import WebdatasetDataModule, CollateType
+from DiffusionModules.LatentDiffusionTrainer import LatentDiffusionTrainer
 from DiffusionModules.ModelLoading import load_vqgan
 
 resume_from_checkpoint = False
@@ -84,7 +76,6 @@ model = LatentDiffusionTrainer(
     sample_images_out_base_path=sample_images_out_base_path,
     checkpoint_every_val_epochs=1,
     embedding_provider=ClipEmbeddingProvider(clip_tools=clip_tools),
-    # alt_validation_emb_provider=ClipTranslatorEmbeddingProvider(clip_tools=clip_tools, translator_model_path=translator_model_path)
     quantize_after_sample=False
 )
 

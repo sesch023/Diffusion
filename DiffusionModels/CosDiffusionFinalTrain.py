@@ -1,22 +1,17 @@
-from DiffusionModules.Diffusion import *
-from DiffusionModules.DiffusionTrainer import *
-from DiffusionModules.DiffusionModels import *
-from DiffusionModules.DataModules import *
 import os
 import torch
-from torch import optim, nn, utils, Tensor
 import lightning.pytorch as pl
 from lightning.pytorch.loggers import WandbLogger
-from torchmetrics.multimodal import CLIPScore
 import lightning.pytorch.callbacks as cb
-import webdataset as wds
-from PIL import Image
 from torchinfo import summary
-import numpy as np
 import wandb
-import copy
-from abc import ABC, abstractmethod
 import glob
+
+from DiffusionModules.Diffusion import DiffusionTools, CosineScheduler
+from DiffusionModules.DiffusionTrainer import DiffusionTrainer
+from DiffusionModules.DiffusionModels import BasicUNet
+from DiffusionModules.DataModules import WebdatasetDataModule
+from DiffusionModules.EmbeddingTools import ClipTools, ClipRandomImageTextTranslatorEmbeddingProvider, ClipTranslatorEmbeddingProvider
 
 
 torch.set_float32_matmul_precision('high')
@@ -33,11 +28,8 @@ wandb_logger = WandbLogger()
 batch_size = 4
 wandb.save("*.py*")
 
-# url_train = "/home/shared-data/LAION-400M/laion400m-data/{00010..99999}.tar"
-# url_test = "/home/shared-data/LAION-400M/laion400m-data/{00000..00009}.tar"
-
 data = WebdatasetDataModule(
-    ["/home/archive/CC12M/cc12m/{00000..01242}.tar", "/home/archive/CC3M/cc3m/{00000..00331}.tar"],
+    ["/home/archive/CC12M_HIGH_RES/cc12m/{00000..01242}.tar", "/home/archive/CC3M_HIGH_RES/cc3m/{00000..00331}.tar"],
     ["/home/archive/CocoWebdatasetFullScale/mscoco/{00000..00040}.tar"],
     batch_size=batch_size,
     num_workers=4

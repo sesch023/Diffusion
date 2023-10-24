@@ -3,7 +3,6 @@ import torch.nn as nn
 from DiffusionModules.Modules import MultiParamSequential, ResBlock, ResBlockSampleMode, AdaptivePseudo3DConv
 from DiffusionModules.Modules import SelfAttentionResBlock, zero_module, AdaptiveSpatioTemporalResBlock, AdaptiveSpatioTemporalSelfAttentionResBlock
 
-
 class ExponentialMovingAverage():
     def __init__(self, beta, step_start_ema=2000):
         """

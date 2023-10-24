@@ -3,12 +3,9 @@ sys.path.append("../")
 
 import torch
 
-from DiffusionModules.Diffusion import *
-from DiffusionModules.DiffusionTrainer import *
-from DiffusionModules.DiffusionModels import *
-from DiffusionModules.DataModules import *
+from DiffusionModules.DataModules import WebdatasetDataModule
 from DiffusionModules.ModelLoading import load_udm
-from DiffusionModules.EmbeddingTools import ClipTools, ClipEmbeddingProvider, ClipTranslatorEmbeddingProvider, ClipTextEmbeddingProvider
+from DiffusionModules.EmbeddingTools import ClipTools, ClipTextEmbeddingProvider
 
 gpus=[2]
 device = f"cuda:{str(gpus[0])}" if torch.cuda.is_available() else "cpu"
@@ -18,12 +15,13 @@ path = "~/upscaler.ckpt"
 model = load_udm(path, device, upscale_size=256)
 model.sample_images_out_base_path = report_path
 start_n = 0
-n = 1000
+n = 250
 batch_size = 4
 
 scores = []
 scores_text = []
 scores_low_res = []
+scores_no_emb = []
 
 def calculate_mean(items, key):
     sum_d = 0
@@ -45,6 +43,10 @@ def sample_from_diffusion_trainer(trainer, captions, images, device, batch_idx, 
     images = trainer.transformable_data_module.transform_batch(images).to(device)
     image_shape = images.shape
 
+    sampled_images_no_emb = trainer.diffusion_tools.sample_data(trainer.ema_unet, image_shape, None, trainer.cfg_scale, x_appendex=low_res)
+    score_no_emb = trainer.val_score(sampled_images_no_emb, images, captions)
+    scores_no_emb.append({key: value.item() for key, value in score_no_emb.items()})
+
     sampled_images = trainer.diffusion_tools.sample_data(trainer.ema_unet, image_shape, embs, trainer.cfg_scale, x_appendex=low_res)
     score = trainer.val_score(sampled_images, images, captions)
     scores.append({key: value.item() for key, value in score.items()})
@@ -61,6 +63,7 @@ def sample_from_diffusion_trainer(trainer, captions, images, device, batch_idx, 
 
     trainer.save_sampled_images(sampled_images_text, captions, batch_idx, "up_text_emb")
     trainer.save_sampled_images(sampled_images, captions, batch_idx, "up_img_emb")
+    trainer.save_sampled_images(sampled_images_no_emb, captions, batch_idx, "up_no_emb")
     trainer.save_sampled_images(low_res, captions, batch_idx, "low_res")
     trainer.save_sampled_images(images, captions, batch_idx, "real")
 
@@ -68,6 +71,9 @@ def sample_from_diffusion_trainer(trainer, captions, images, device, batch_idx, 
     print(f"Mean FID: {mean_fid}")
     mean_fid = calculate_mean(scores_text, "fid_score")
     print(f"Mean FID Text: {mean_fid}")
+    mean_fid = calculate_mean(scores_no_emb, "fid_score")
+    print(f"Mean FID No Emb: {mean_fid}")
+
     if low_res_embs:
         mean_fid = calculate_mean(scores_low_res, "fid_score")
         print(f"Mean FID Low Res: {mean_fid}")
@@ -102,6 +108,8 @@ with open(f"{report_path}/scores.txt", "w") as f:
     f.write(f"Mean FID: {mean_fid}")
     mean_fid = calculate_mean(scores_text, "fid_score")
     f.write(f"Mean FID Text: {mean_fid}")
+    mean_fid = calculate_mean(scores_no_emb, "fid_score")
+    f.write(f"Mean FID No Emb: {mean_fid}")
     if low_res_embs:
         mean_fid = calculate_mean(scores_low_res, "fid_score")
         f.write(f"Mean FID Low Res: {mean_fid}")

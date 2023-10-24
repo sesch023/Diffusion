@@ -2,35 +2,24 @@ import copy
 import os
 import shutil
 import sys
-from abc import ABC, abstractmethod
+from einops import rearrange
+from enum import Enum
 
 import lightning.pytorch as pl
-import lightning.pytorch.callbacks as cb
-import numpy as np
 import torch
-import torchvision
 import torchvision.transforms as transforms
-import webdataset as wds
 from diffusers import LDMSuperResolutionPipeline
-from PIL import Image
 from super_image import DrlnModel, ImageLoader
-from torch import Tensor, nn, optim, utils
+from torch import nn, optim
 from torchmetrics.image.fid import FrechetInceptionDistance
 from torchmetrics.multimodal import CLIPScore
 
 import DiffusionModules.ClipTranslatorModules as tools
-import wandb
-from DiffusionModules.ClipTranslatorModules import (ClipTranslator,
-                                                    ClipTranslatorTrainer)
 from DiffusionModules.FVD import FVDLoss
-
-from DiffusionModules.Diffusion import *
 from DiffusionModules.DiffusionModels import ExponentialMovingAverage
-from DiffusionModules.Util import *
-from DiffusionModules.DataModules import CIFAR10DataModule
 from DiffusionModules.ModelLoading import load_udm
-from DiffusionModules.EmbeddingTools import *
-from einops import rearrange
+from DiffusionModules.EmbeddingTools import ClipTextEmbeddingProvider, ClipEmbeddingProvider
+from Configs import ModelLoadConfig
 
 sys.modules['ClipTranslatorModules'] = tools
 
@@ -81,7 +70,7 @@ class DiffusionTrainer(pl.LightningModule):
                 self.save_images = lambda image, path: image.save(path)
             # This should later Change to a Enum value, but changing a enum with pickled models does not work and results in load errors.
             elif self.sample_upscaler_mode == "UDM":
-                model_path = "~/upscaler.ckpt"
+                model_path = ModelLoadConfig.upscaler_model_path
                 self.up_model_pipeline = load_udm(model_path, self.c_device, self.transformable_data_module.img_in_target_size*sample_scale_factor)
                 self.up_model_pipeline.eval()
                 self.upscaler = lambda image, caption: self.up_model_pipeline([image], [caption], ema=True)[0]
@@ -94,7 +83,7 @@ class DiffusionTrainer(pl.LightningModule):
             self.ema = None
         
         if val_score is None:
-            self.fid = FrechetInceptionDistance(feature=64)
+            self.fid = FrechetInceptionDistance(feature=2048)
             
             def get_fid(samples, real):
                 self.fid.reset()
@@ -265,7 +254,7 @@ class UpscalerDiffusionTrainer(pl.LightningModule):
             self.ema = None
             
         if val_score is None:
-            self.fid = FrechetInceptionDistance(feature=64).to(self.device)
+            self.fid = FrechetInceptionDistance(feature=2048).to(self.device)
             
             def get_fid(samples, real):
                 self.fid.reset()
@@ -433,7 +422,7 @@ class SpatioTemporalDiffusionTrainer(pl.LightningModule):
         self.transformable_data_module = transformable_data_module
         self.loss = nn.MSELoss() if loss is None else loss
         self.embedding_provider = ClipEmbeddingProvider() if embedding_provider is None else embedding_provider
-        self.temporal_embedding_provider = ClipVideoEmbeddingProvider() if temporal_embedding_provider is None else temporal_embedding_provider
+        self.temporal_embedding_provider = ClipTextEmbeddingProvider() if temporal_embedding_provider is None else temporal_embedding_provider
         self.alt_validation_emb_provider = self.embedding_provider if alt_validation_emb_provider is None else alt_validation_emb_provider
         self.alt_validation_temporal_emb_provider = self.temporal_embedding_provider if alt_validation_temporal_emb_provider is None else alt_validation_temporal_emb_provider
         self.cfg_scale = cfg_scale
@@ -461,7 +450,7 @@ class SpatioTemporalDiffusionTrainer(pl.LightningModule):
             self.ema = None
         
         if val_score is None:
-            self.fid = FrechetInceptionDistance(feature=64)
+            self.fid = FrechetInceptionDistance(feature=2048)
             self.clip_model = CLIPScore(model_name_or_path="openai/clip-vit-base-patch32").eval()
             if not after_load_fvd:
                 self.load_fvd()

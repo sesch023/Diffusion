@@ -37,4 +37,4 @@ for ax, im in zip(grid, rows_merged):
     ax.imshow(cv2.cvtColor(im, cv2.COLOR_BGR2RGB))
 
 
-plt.savefig("merged.png", dpi=1200)
+plt.savefig("merged.png", dpi=1200, bbox_inches='tight', pad_inches=0)

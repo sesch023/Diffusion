@@ -4,6 +4,7 @@ import scipy
 import numpy as np
 from DiffusionModules.Util import open_url
 
+
 # https://github.com/universome/fvd-comparison/blob/master/compare_models.py
 
 class FVDLoss(nn.Module):

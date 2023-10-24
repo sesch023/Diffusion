@@ -9,9 +9,10 @@ import functools
 from enum import Enum
 from WebvidReader.VideoDataset import VideoDataset
 import webdataset as wds
-from torch.nn.utils.rnn import pad_packed_sequence, pad_sequence, pack_padded_sequence
+from torch.nn.utils.rnn import pad_sequence
 from torch.utils.data import DataLoader
 from collections import OrderedDict
+from Configs import DatasetLoadConfig
 
 
 class CollateTypeFunction():
@@ -274,7 +275,7 @@ class TransformableImageDataModule(TransformableDataModule, ABC):
 class CIFAR10DataModule(TransformableImageDataModule):
     classes = ('airplane', 'automobile', 'bird', 'cat', 'deer', 'dog', 'frog', 'horse', 'ship', 'truck')
 
-    def __init__(self, cifar_path="/home/archive/cifar10-64", batch_size=16, separate_val_split=False, separate_val_split_ratio=0.1, num_workers=4, img_in_target_size=64):
+    def __init__(self, cifar_path=None, batch_size=16, separate_val_split=False, separate_val_split_ratio=0.1, num_workers=4, img_in_target_size=64):
         """
         Creates a CIFAR10DataModule that loads the CIFAR10 dataset from the given path. The dataset is split into
         training, validation, and test set. The training and validation set are loaded from the train folder and the
@@ -282,7 +283,7 @@ class CIFAR10DataModule(TransformableImageDataModule):
         training set is loaded from the train folder and the validation set is loaded from the test folder. In that case
         no test set is provided. The target size of the images is set to the given img_in_target_size. 
 
-        :param cifar_path: Path to the CIFAR10 dataset, defaults to "/home/archive/cifar10-64"
+        :param cifar_path: Path to the CIFAR10 dataset, defaults to Configs.DatasetLoadConfig.cifar_10_64_path
         :param batch_size: batch_size of the dataloaders, defaults to 16
         :param separate_val_split: Uses a validation split if True, else it uses the test set as validation set, defaults to False
         :param separate_val_split_ratio: Ratio of the validation split if separate_val_split is True, defaults to 0.1
@@ -290,6 +291,9 @@ class CIFAR10DataModule(TransformableImageDataModule):
         :param img_in_target_size: Target size of the images, defaults to 64
         """        
         super(CIFAR10DataModule, self).__init__(CollateType.COLLATE_NONE_TUPLE, None, img_in_target_size)
+        if cifar_path is None:
+            cifar_path = DatasetLoadConfig.cifar_10_64_path
+
         self.batch_size = batch_size
         self.cifar_path = cifar_path
         self.num_workers = num_workers
@@ -585,15 +589,15 @@ class VideoDatasetDataModule(TransformableDataModule):
         if self.test_data is None:
             print("Warning: No test paths defined, returning a Validation Dataloader!")
             return self.val_dataloader()
-        else:
-            return DataLoader(
-                self.test_data,
-                batch_size=self.batch_size ,
-                shuffle=True,
-                collate_fn=self.collate,
-                pin_memory=False,
-                num_workers=self.num_workers
-            )
+            
+        return DataLoader(
+            self.test_data,
+            batch_size=self.batch_size ,
+            shuffle=True,
+            collate_fn=self.collate,
+            pin_memory=False,
+            num_workers=self.num_workers
+        )
 
     def transform_batch(self, batch):
         """
@@ -602,6 +606,7 @@ class VideoDatasetDataModule(TransformableDataModule):
         :param batch: Batch of data.
         :return: Transformed batch of data.
         """        
+        # pylint: disable=E1120
         return VideoDataset.normalize(batch)
 
     def reverse_transform_batch(self, batch):
@@ -611,6 +616,7 @@ class VideoDatasetDataModule(TransformableDataModule):
         :param batch: Transformed batch of data.
         :return: Batch of data.
         """        
+        # pylint: disable=E1120
         return VideoDataset.reverse_normalize(batch)
 
     def transform(self, data):
@@ -620,6 +626,7 @@ class VideoDatasetDataModule(TransformableDataModule):
         :param data: Element of data.
         :return: Transformed element of data.
         """        
+        # pylint: disable=E1120
         return VideoDataset.normalize(data)
 
     def reverse_transform(self, data):
@@ -629,4 +636,5 @@ class VideoDatasetDataModule(TransformableDataModule):
         :param data: Transformed element of data.
         :return: Element of data.
         """        
+        # pylint: disable=E1120
         return VideoDataset.reverse_normalize(data)

@@ -1,9 +1,7 @@
 import torch
 import torch.nn as nn
-from torch import optim, nn, utils, Tensor
+from torch import optim
 import lightning.pytorch as pl
-import lightning.pytorch.callbacks as cb
-
 
 class ClipTranslator(nn.Module):    
     def __init__(self, in_out_dim=512, mid_dim=1024, num_mid=30, dropout=0.1): 

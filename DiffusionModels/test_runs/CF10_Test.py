@@ -1,15 +1,9 @@
 import sys
 sys.path.append("../")
-
 import torch
-from functools import reduce
 
-from DiffusionModules.Diffusion import *
-from DiffusionModules.DiffusionTrainer import *
-from DiffusionModules.DiffusionModels import *
-from DiffusionModules.DataModules import *
+from DiffusionModules.DataModules import CIFAR10DataModule
 from DiffusionModules.ModelLoading import load_cf10
-
 
 gpus=[1]
 device = f"cuda:{str(gpus[0])}" if torch.cuda.is_available() else "cpu"
@@ -65,5 +59,3 @@ with open(f"{report_path}/scores.txt", "w") as f:
     mean_clip = calculate_mean(scores, "clip_score")
     f.write(f"Mean FID: {mean_fid}\n")
     f.write(f"Mean CLIP score: {mean_clip}")
-
-

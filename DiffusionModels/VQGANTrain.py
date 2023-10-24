@@ -1,22 +1,15 @@
-from DiffusionModules.LatentVQGANModel import *
-from DiffusionModules.LatentVQGANModules import *
-from DiffusionModules.VQGANLosses import *
-from DiffusionModules.DataModules import *
 import os
+
+import wandb
+from torchinfo import summary
 import torch
-from torch import optim, nn, utils, Tensor
 import lightning.pytorch as pl
 from lightning.pytorch.loggers import WandbLogger
-from torchmetrics.multimodal import CLIPScore
-import lightning.pytorch.callbacks as cb
-import webdataset as wds
-from PIL import Image
-import numpy as np
-import wandb
-import copy
-from abc import ABC, abstractmethod
-import braceexpand
-from torchinfo import summary
+
+from DiffusionModules.LatentVQGANModel import VQModel
+from DiffusionModules.LatentVQGANModules import Encoder, Decoder, NLayerDiscriminator
+from DiffusionModules.VQGANLosses import VQLPIPSWithDiscriminator
+from DiffusionModules.DataModules import WebdatasetDataModule, CollateType
 
 
 torch.set_float32_matmul_precision('high')
@@ -33,7 +26,7 @@ wandb.save("*.py*")
 
 data = WebdatasetDataModule(
     ["/home/archive/CC12M/cc12m/{00000..01242}.tar", "/home/archive/CC3M/cc3m/{00000..00331}.tar"],
-    ["/home/archive/CocoWebdatasetFullScale/mscoco/{00000..0004ß}.tar"],
+    ["/home/archive/CocoWebdatasetFullScale/mscoco/{00000..00040}.tar"],
     batch_size=batch_size,
     collate_type=CollateType.COLLATE_NONE_DICT,
     num_workers=num_workers,

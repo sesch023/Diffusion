@@ -1,11 +1,10 @@
 import torch 
 import torch.nn as nn
-from DiffusionModules.Modules import *
 from einops import rearrange
-from torch import einsum
-import torch.nn.functional as F
 import functools
 import numpy as np
+
+from DiffusionModules.Modules import *
 
 class Encoder(nn.Module):
     # Adapted from:

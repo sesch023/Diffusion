@@ -5,7 +5,6 @@ import torch.nn as nn
 import numpy as np
 from einops import rearrange
 
-
 def zero_module(module):
     """
     Zero out the parameters of a module and return it.

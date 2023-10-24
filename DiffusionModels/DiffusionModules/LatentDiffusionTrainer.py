@@ -1,33 +1,16 @@
 import copy
 import os
 import shutil
-import sys
-from abc import ABC, abstractmethod
 
 import lightning.pytorch as pl
-import lightning.pytorch.callbacks as cb
-import numpy as np
 import torch
-import torchvision
-import torchvision.transforms as transforms
-import webdataset as wds
-from diffusers import LDMSuperResolutionPipeline
-from PIL import Image
-from super_image import DrlnModel, ImageLoader
-from torch import Tensor, nn, optim, utils
+from super_image import ImageLoader
+from torch import nn, optim
 from torchmetrics.image.fid import FrechetInceptionDistance
 from torchmetrics.multimodal import CLIPScore
 
-import DiffusionModules.ClipTranslatorModules as tools
-import wandb
-from DiffusionModules.ClipTranslatorModules import (ClipTranslator,
-                                                    ClipTranslatorTrainer)
-from DiffusionModules.Diffusion import *
 from DiffusionModules.DiffusionModels import ExponentialMovingAverage
-from DiffusionModules.Util import *
-from DiffusionModules.DataModules import CIFAR10DataModule
-from DiffusionModules.DiffusionTrainer import ClipEmbeddingProvider
-from DiffusionModules.EmbeddingTools import *
+from DiffusionModules.EmbeddingTools import ClipEmbeddingProvider
 
 
 class LatentDiffusionTrainer(pl.LightningModule):
@@ -49,7 +32,8 @@ class LatentDiffusionTrainer(pl.LightningModule):
         optimizer=None, 
         checkpoint_every_val_epochs=10,
         quantize_after_sample=True,
-        sample_images_out_base_path="samples/"):
+        sample_images_out_base_path="samples/"
+    ):
         super().__init__()
         self.unet = unet
         self.vqgan = vqgan.eval()
@@ -62,7 +46,7 @@ class LatentDiffusionTrainer(pl.LightningModule):
         self.cfg_train_ratio = cfg_train_ratio
         self.captions_preprocess = captions_preprocess
         self.sample_images_out_base_path = sample_images_out_base_path
-        self.optimizer = optim.AdamW(self.unet.parameters(), lr=3e-4, weight_decay=0.0) if optimizer is None else optimizer
+        self.optimizer = optim.AdamW(self.unet.parameters(), lr=9.6e-5, weight_decay=0.0) if optimizer is None else optimizer
         self.val_epoch = 0
         self.checkpoint_every_val_epochs = checkpoint_every_val_epochs
         self.prev_checkpoint = None
@@ -81,7 +65,7 @@ class LatentDiffusionTrainer(pl.LightningModule):
             self.ema = None
         
         if val_score is None:
-            self.fid = FrechetInceptionDistance(feature=64)
+            self.fid = FrechetInceptionDistance(feature=2048)
             
             def get_fid_score(samples, real):
                 self.fid.reset()

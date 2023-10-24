@@ -1,26 +1,18 @@
-from DiffusionModules.Diffusion import *
-from DiffusionModules.DiffusionTrainer import *
-from DiffusionModules.DiffusionModels import *
-from DiffusionModules.DataModules import *
-from DiffusionModules.LatentDiffusionTrainer import *
-from DiffusionModules.LatentVQGANModel import *
-from DiffusionModules.ModelLoading import load_vqgan
 import os
+import glob
+
 import torch
-from torch import optim, nn, utils, Tensor
-import torchvision
-import torchvision.transforms as transforms
 import lightning.pytorch as pl
 from lightning.pytorch.loggers import WandbLogger
-from torchmetrics.multimodal import CLIPScore
 import lightning.pytorch.callbacks as cb
-import webdataset as wds
-from PIL import Image
-import numpy as np
 import wandb
-import copy
-from abc import ABC, abstractmethod
-import glob
+
+from DiffusionModules.Diffusion import DiffusionTools, LinearScheduler
+from DiffusionModules.DiffusionModels import UNet
+from DiffusionModules.DataModules import WebdatasetDataModule, CollateType
+from DiffusionModules.LatentDiffusionTrainer import LatentDiffusionTrainer
+from DiffusionModules.ModelLoading import load_vqgan
+from DiffusionModules.EmbeddingTools import ClipTools, ClipEmbeddingProvider
 
 resume_from_checkpoint = True
 
@@ -35,6 +27,15 @@ wandb_logger = WandbLogger()
 batch_size = 4
 num_workers = 4
 wandb.save("*.py*")
+
+data = WebdatasetDataModule(
+    ["/home/archive/CC12M_HIGH_RES/cc12m/{00000..01242}.tar", "/home/archive/CC3M_HIGH_RES/cc3m/{00000..00331}.tar"],
+    ["/home/archive/CocoWebdatasetFullScale/mscoco/{00000..00040}.tar"],
+    batch_size=batch_size,
+    collate_type=CollateType.COLLATE_NONE_TUPLE,
+    num_workers=num_workers,
+    img_in_target_size=256
+)  
         
 captions_preprocess = lambda captions: [cap[:77] for cap in captions]
 
@@ -75,7 +76,6 @@ model = LatentDiffusionTrainer(
     sample_images_out_base_path=sample_images_out_base_path,
     checkpoint_every_val_epochs=1,
     embedding_provider=ClipEmbeddingProvider(clip_tools=clip_tools),
-    # alt_validation_emb_provider=ClipTranslatorEmbeddingProvider(clip_tools=clip_tools, translator_model_path=translator_model_path)
     quantize_after_sample=True
 )
 

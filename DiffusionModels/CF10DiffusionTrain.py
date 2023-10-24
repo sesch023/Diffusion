@@ -1,16 +1,19 @@
-from DiffusionModules.Diffusion import *
-from DiffusionModules.DiffusionTrainer import *
-from DiffusionModules.DiffusionModels import *
-from DiffusionModules.DataModules import *
-import torch
-from torch import optim, nn, utils, Tensor
-import lightning.pytorch as pl
-from lightning.pytorch.loggers import WandbLogger
-import wandb
-import lightning.pytorch.callbacks as cb
-import copy
-from torchinfo import summary
+import os
 import glob
+
+import torch
+import lightning.pytorch as pl
+import lightning.pytorch.callbacks as cb
+import wandb
+from torchinfo import summary
+from lightning.pytorch.loggers import WandbLogger
+
+from DiffusionModules.Diffusion import LinearScheduler, DiffusionTools
+from DiffusionModules.DiffusionTrainer import DiffusionTrainer
+from DiffusionModules.DiffusionModels import BasicUNet
+from DiffusionModules.DataModules import CIFAR10DataModule
+from DiffusionModules.EmbeddingTools import CF10EmbeddingProvider
+
 torch.autograd.set_detect_anomaly(True)
 
 resume_from_checkpoint = True
@@ -28,7 +31,6 @@ cifar_data = CIFAR10DataModule(batch_size=batch_size)
 unet = BasicUNet(i_emb_size=len(CIFAR10DataModule.classes), device=device).to(device)
 summary(unet, [(1, 3, 64, 64), (1, 256), (1, 10)], verbose=1)
 wandb.save("*.py*")
-
 
 sample_images_out_base_path = "samples_cifar_final"
 captions_preprocess = None

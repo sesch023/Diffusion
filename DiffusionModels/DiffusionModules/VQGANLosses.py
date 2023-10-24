@@ -4,7 +4,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torchmetrics.image.lpip import LearnedPerceptualImagePatchSimilarity as LPIPS
 
-from DiffusionModules.LatentVQGANModules import *
+from DiffusionModules.LatentVQGANModules import NLayerDiscriminator, weights_init
 
 # Adpted from: https://github.com/CompVis/taming-transformers/blob/master/taming/modules/losses/vqperceptual.py
 
@@ -22,6 +22,7 @@ def hinge_discriminator_loss(logits_real, logits_fake):
 
 
 def vanilla_discriminator_loss(logits_real, logits_fake):
+    # pylint: disable=E1102
     d_loss = 0.5 * (
         torch.mean(torch.nn.functional.softplus(-logits_real)) +
         torch.mean(torch.nn.functional.softplus(logits_fake)))

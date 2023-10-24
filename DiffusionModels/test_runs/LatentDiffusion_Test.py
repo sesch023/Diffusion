@@ -3,11 +3,8 @@ sys.path.append("../")
 
 import torch
 
-from DiffusionModules.Diffusion import *
-from DiffusionModules.DiffusionTrainer import *
-from DiffusionModules.DiffusionModels import *
-from DiffusionModules.DataModules import *
-from DiffusionModules.EmbeddingTools import ClipTools, ClipEmbeddingProvider, ClipTranslatorEmbeddingProvider, ClipTextEmbeddingProvider
+from DiffusionModules.DataModules import WebdatasetDataModule
+from DiffusionModules.EmbeddingTools import ClipTools, ClipTranslatorEmbeddingProvider
 from DiffusionModules.ModelLoading import load_latent_diffusion
 
 gpus=[1]

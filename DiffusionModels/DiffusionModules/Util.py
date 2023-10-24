@@ -1,30 +1,15 @@
 import torch
 import numpy as np
 import torchvision.transforms as transforms
-import ctypes
-import fnmatch
-import importlib
-import inspect
-import numpy as np
-import os
-import shutil
-import sys
-import types
 import io
-import pickle
 import re
 import requests
 import html
 import hashlib
-import glob
-import tempfile
 import urllib
 import urllib.request
-import uuid
 
-from distutils.util import strtobool
-from typing import Any, List, Tuple, Union, Dict
-
+from typing import Any
 
 def open_url(url: str, num_attempts: int = 10, verbose: bool = True, return_filename: bool = False) -> Any:
     # https://github.com/universome/fvd-comparison/blob/master/util.py

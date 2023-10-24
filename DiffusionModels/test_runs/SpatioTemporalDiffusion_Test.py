@@ -2,24 +2,20 @@ import sys
 sys.path.append("../")
 
 import torch
-
-from DiffusionModules.Diffusion import *
-from DiffusionModules.DiffusionTrainer import *
-from DiffusionModules.DiffusionModels import *
-from DiffusionModules.DataModules import *
-from DiffusionModules.ModelLoading import load_spatio_temporal
-
 from einops import rearrange
+
+from DiffusionModules.DataModules import VideoDatasetDataModule, WebdatasetDataModule
+from DiffusionModules.ModelLoading import load_spatio_temporal
 
 gpus=[0]
 device = f"cuda:{str(gpus[0])}" if torch.cuda.is_available() else "cpu"
 
-report_path = "SpatioTemporalDiffusion_report/"
+report_path = "SpatioTemporalDiffusion_report_2/"
 path = "../samples_spatio_temporal/latest.ckpt"
-model = load_spatio_temporal(path, device)
+model = load_spatio_temporal(path, device, False)
 model.sample_data_out_base_path = report_path
-start_n = 44
-n = 1000
+start_n = 0
+n = 200
 batch_size = 2
 
 scores = []
@@ -39,8 +35,8 @@ def sample_from_diffusion_trainer(trainer, captions, videos, device, batch_idx, 
     videos_shape = videos.shape
     sampled_videos = trainer.diffusion_tools.sample_data(trainer.ema_unet, videos_shape, embs, trainer.cfg_scale, clamp_var=True, f_emb=f_emb, temporal=True)
     score = trainer.val_score(sampled_videos.detach(), videos.detach(), captions)
+    score["clip_score"] = score["clip_score"].item()
     scores.append(score)
-    print(score)
 
     trainer.save_sampled_data(sampled_videos, captions, batch_idx, "fake")
     trainer.save_sampled_data(videos, captions, batch_idx, "real")
@@ -85,7 +81,7 @@ dl = temporal_dataset.val_dataloader()
 
 limit_batches = n//batch_size + 1
 i = start_n
-
+print(f"Batch {i} of {limit_batches - 1} done.")
 for videos, captions, lengths, fps in dl:
     sample_from_diffusion_trainer(model, captions, videos, device, i, fps, temporal_dataset, dm)
     print(f"Batch {i} of {limit_batches - 1} done.")

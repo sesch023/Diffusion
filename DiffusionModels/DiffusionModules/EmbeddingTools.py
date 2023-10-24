@@ -1,31 +1,13 @@
-import copy
 import os
-import shutil
-import sys
 from abc import ABC, abstractmethod
-
-import lightning.pytorch as pl
-import lightning.pytorch.callbacks as cb
-import numpy as np
-import torch
-import torchvision
-import torchvision.transforms as transforms
-import webdataset as wds
-import clip
-from diffusers import LDMSuperResolutionPipeline
-from PIL import Image
-from super_image import DrlnModel, ImageLoader
-from torch import Tensor, nn, optim, utils
-from torchmetrics.image.fid import FrechetInceptionDistance
-from torchmetrics.multimodal import CLIPScore
-
-import wandb
-from DiffusionModules.ClipTranslatorModules import (ClipTranslator,
-                                                    ClipTranslatorTrainer)
-from DiffusionModules.DataModules import CIFAR10DataModule
-from DiffusionModules.ModelLoading import load_udm
 from einops import rearrange
 import random
+import torch
+import clip
+from torch import nn
+
+from DiffusionModules.ClipTranslatorModules import ClipTranslatorTrainer
+from DiffusionModules.DataModules import CIFAR10DataModule
 
 class ClipTools(nn.Module):
     def __init__(self, clip_model="ViT-B/32", device=None):
@@ -118,6 +100,7 @@ class CF10EmbeddingProvider(BaseEmbeddingProvider):
         self.num_classes = len(self.classes)
         
     def get_embedding(self, images, labels):
+        # pylint: disable=E1102
         labels = [self.classes.index(label) for label in labels]
         labels = torch.Tensor(labels).long()
         return nn.functional.one_hot(labels, self.num_classes).float()

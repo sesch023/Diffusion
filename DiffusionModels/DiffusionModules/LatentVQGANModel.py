@@ -2,11 +2,10 @@ import os
 import shutil
 
 import torch
-import torch.nn.functional as F
 import lightning.pytorch as pl
-from DiffusionModules.LatentVQGANModules import *
-from DiffusionModules.VQGANLosses import *
-from DiffusionModules.Util import ImageTransformer
+from DiffusionModules.LatentVQGANModules import Encoder, Decoder, VectorQuantizer
+from DiffusionModules.VQGANLosses import VQLPIPSWithDiscriminator
+
 
 DEFAULT_ENCODER_ARGS = dict(
     ch=128,

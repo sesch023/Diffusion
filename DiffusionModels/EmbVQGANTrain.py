@@ -1,26 +1,18 @@
-from DiffusionModules.LatentVQGANModel import *
-from DiffusionModules.LatentVQGANModules import *
-from DiffusionModules.VQGANLosses import *
-from DiffusionModules.DataModules import *
-from DiffusionModules.Diffusion import ClipTools
-from DiffusionModules.DiffusionTrainer import ClipEmbeddingProvider
 import os
-import torch
-from torch import optim, nn, utils, Tensor
-import lightning.pytorch as pl
-from lightning.pytorch.loggers import WandbLogger
-from torchmetrics.multimodal import CLIPScore
-import lightning.pytorch.callbacks as cb
-import webdataset as wds
-from PIL import Image
-import numpy as np
-import wandb
-import copy
-from abc import ABC, abstractmethod
-import braceexpand
-from torchinfo import summary
 import glob
 
+import wandb
+from torchinfo import summary
+import torch
+import lightning.pytorch as pl
+from lightning.pytorch.loggers import WandbLogger
+
+from DiffusionModules.LatentVQGANModel import VQModel
+from DiffusionModules.LatentVQGANModules import Encoder, Decoder, NLayerDiscriminator
+from DiffusionModules.VQGANLosses import VQLPIPSWithDiscriminator
+from DiffusionModules.DataModules import WebdatasetDataModule, CollateType
+from DiffusionModules.EmbeddingTools import ClipTools
+from DiffusionModules.DiffusionTrainer import ClipEmbeddingProvider
 
 resume_from_checkpoint = True
 torch.set_float32_matmul_precision('high')

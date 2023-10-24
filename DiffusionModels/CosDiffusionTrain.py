@@ -1,23 +1,17 @@
-from DiffusionModules.Diffusion import *
-from DiffusionModules.DiffusionTrainer import *
-from DiffusionModules.DiffusionModels import *
-from DiffusionModules.DataModules import *
 import os
 import torch
-from torch import optim, nn, utils, Tensor
 import lightning.pytorch as pl
 from lightning.pytorch.loggers import WandbLogger
-from torchmetrics.multimodal import CLIPScore
 import lightning.pytorch.callbacks as cb
-import webdataset as wds
-from PIL import Image
 from torchinfo import summary
-import numpy as np
 import wandb
-import copy
-from abc import ABC, abstractmethod
 import glob
 
+from DiffusionModules.Diffusion import DiffusionTools, CosineScheduler
+from DiffusionModules.DiffusionTrainer import DiffusionTrainer
+from DiffusionModules.DiffusionModels import BasicUNet
+from DiffusionModules.DataModules import WebdatasetDataModule
+from DiffusionModules.EmbeddingTools import ClipTools, ClipEmbeddingProvider
 
 torch.set_float32_matmul_precision('high')
 os.environ["TOKENIZERS_PARALLELISM"] = "true"
@@ -59,7 +53,6 @@ model = DiffusionTrainer(
     sample_images_out_base_path=sample_images_out_base_path,
     checkpoint_every_val_epochs=1,
     embedding_provider=ClipEmbeddingProvider(clip_tools=clip_tools),
-    #alt_validation_emb_provider=ClipTranslatorEmbeddingProvider(device=device, clip_tools=clip_tools, translator_model_path=translator_model_path)
     alt_validation_emb_provider=ClipEmbeddingProvider(clip_tools=clip_tools),
     sample_upscaler_mode="UDM",
     c_device=device

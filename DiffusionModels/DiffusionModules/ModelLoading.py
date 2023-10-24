@@ -1,10 +1,11 @@
-from DiffusionModules.DiffusionModels import *
-from DiffusionModules.DataModules import *
+from DiffusionModules.DiffusionModels import BasicUNet, UNet, UpscalerUNet, SpatioTemporalUNet
+from DiffusionModules.DataModules import WebdatasetDataModule, CIFAR10DataModule, VideoDatasetDataModule
 from torchinfo import summary
+from Configs import ModelLoadConfig
 
 wds_path = ""
-translator_model_path = "~/clip_translator.ckpt"
-upscaler_model_path = "~/upscaler.ckpt"
+translator_model_path = ModelLoadConfig.translator_model_path
+upscaler_model_path = ModelLoadConfig.upscaler_model_path
 
 def load_udm(path, device, upscale_size=256):
     ds = WebdatasetDataModule(
