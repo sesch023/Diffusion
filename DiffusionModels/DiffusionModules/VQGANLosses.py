@@ -6,7 +6,11 @@ from torchmetrics.image.lpip import LearnedPerceptualImagePatchSimilarity as LPI
 
 from DiffusionModules.LatentVQGANModules import NLayerDiscriminator, weights_init
 
-# Adpted from: https://github.com/CompVis/taming-transformers/blob/master/taming/modules/losses/vqperceptual.py
+"""
+This file contains the VQGAN losses used in the DiffusionTrainer.
+This was adapted from:
+https://github.com/CompVis/taming-transformers/blob/master/taming/modules/losses/vqperceptual.py
+"""
 
 def adopt_weight(weight, global_step, threshold=0, value=0.):
     if global_step < threshold:

@@ -282,8 +282,8 @@ class DiffusionTools():
                 model_log_variance = model_var * log_schedule + (1 - model_var) * posterior_log_variance
             
             # Prediction of the mean.
-            recip_alphas_cum = self._sqrt_recip_alphas_cumprod[ts][:, None, None, None]
-            recipm1_alphas_cum = self._sqrt_recipm1_alphas_cumprod[ts][:, None, None, None]
+            recip_alphas_cum = equalize_shape_of_first(self._sqrt_recip_alphas_cumprod[ts], x_t)
+            recipm1_alphas_cum = equalize_shape_of_first(self._sqrt_recipm1_alphas_cumprod[ts], x_t)
             pred_x_start = recip_alphas_cum * x_t - recipm1_alphas_cum * predicted_frozen
             model_mean = mean_coef_1 * pred_x_start + mean_coef_2 * x_t      
 

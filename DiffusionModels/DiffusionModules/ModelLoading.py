@@ -4,10 +4,19 @@ from torchinfo import summary
 from Configs import ModelLoadConfig
 
 wds_path = ""
-translator_model_path = ModelLoadConfig.translator_model_path
-upscaler_model_path = ModelLoadConfig.upscaler_model_path
+
 
 def load_udm(path, device, upscale_size=256):
+    """
+    Loads a trained UpscalerDiffusionTrainer model from a checkpoint.
+    This was specifically written for the Model trained in my Master's Thesis, 
+    therefore most of the parameters are hardcoded.
+
+    :param path: Path to the checkpoint.
+    :param device: Device to load the model on.
+    :param upscale_size: Size of the output image, default is 256.
+    :return: UpscalerDiffusionTrainer.
+    """    
     ds = WebdatasetDataModule(
         [wds_path],
         [wds_path],
@@ -34,6 +43,20 @@ def load_udm(path, device, upscale_size=256):
     return up_model_pipeline
 
 def load_dm(path, dm, device, emb_prov, i_emb_size, upscale_size, alt_emb_prov=None):
+    """
+    Loads a trained DiffusionTrainer model from a checkpoint. 
+    This was specifically written for the Model trained in my Master's Thesis,
+    therefore most of the parameters are hardcoded.
+
+    :param path: Path to the checkpoint.
+    :param dm: DataModule to load the model on.
+    :param device: Device to load the model on.
+    :param emb_prov: EmbeddingProvider to load the model on.
+    :param i_emb_size: Size of the input embedding.
+    :param upscale_size: Size of the output image.
+    :param alt_emb_prov: Alternative EmbeddingProvider to load the model on.
+    :return: DiffusionTrainer.
+    """    
     unet = BasicUNet(i_emb_size=i_emb_size, device=device).to(device)
     from DiffusionModules.DiffusionTrainer import DiffusionTrainer
     model = DiffusionTrainer.load_from_checkpoint(
@@ -49,12 +72,24 @@ def load_dm(path, dm, device, emb_prov, i_emb_size, upscale_size, alt_emb_prov=N
     model.diffusion_tools._device = device
     model.c_devide = device
     model.eval()
+    upscaler_model_path = ModelLoadConfig.upscaler_model_path
     model.up_model_pipeline = load_udm(upscaler_model_path, device, upscale_size)
     model.up_model_pipeline.eval()
     model.up_model_pipeline.to(device)
     return model
 
 def load_wdm(path, device, alt_prov_mode="TRANSLATOR"):
+    """
+    Loads a trained DiffusionTrainer based on the WebdatasetDataModule from a checkpoint.
+    This was specifically written for the Model trained in my Master's Thesis,
+    therefore most of the parameters are hardcoded.
+
+    :param path: Path to the checkpoint.
+    :param device: Device to load the model on.
+    :param alt_prov_mode: Alternative EmbeddingProvider mode, either "TRANSLATOR" or "TEXT" for the 
+                          ClipTranslatorEmbeddingProvider or ClipTextEmbeddingProvider. Default is "TRANSLATOR".
+    :return: _description_
+    """    
     batch_size = 1
     upscale_size = 256
     dm = WebdatasetDataModule(
@@ -69,6 +104,7 @@ def load_wdm(path, device, alt_prov_mode="TRANSLATOR"):
     emb_prov = ClipEmbeddingProvider(clip_tools=clip_tools)
     alt_emb_prov = None
     if alt_prov_mode == "TRANSLATOR":
+        translator_model_path = ModelLoadConfig.translator_model_path
         alt_emb_prov = ClipTranslatorEmbeddingProvider(clip_tools=clip_tools, translator_model_path=translator_model_path)
     elif alt_prov_mode == "TEXT":
         alt_emb_prov = ClipTextEmbeddingProvider(clip_tools=clip_tools)
@@ -76,13 +112,21 @@ def load_wdm(path, device, alt_prov_mode="TRANSLATOR"):
     return load_dm(path, dm, device, emb_prov, i_emb_size, upscale_size, alt_emb_prov=alt_emb_prov)
 
 def load_cf10(path, device):
+    """
+    Loads a trained DiffusionTrainer based on the CIFAR10DataModule from a checkpoint.
+    This was specifically written for the Model trained in my Master's Thesis,
+    therefore most of the parameters are hardcoded.
+
+    :param path: Path to the checkpoint.
+    :param device: Device to load the model on.
+    :return: DiffusionTrainer.
+    """    
     batch_size = 1
-    dm = WebdatasetDataModule(
-        [wds_path],
-        [wds_path],
+    dm = CIFAR10DataModule(
+        cifar_path=ModelLoadConfig.cifar_10_64_path,
         batch_size=batch_size,
         num_workers=1
-    )  
+    )
     i_emb_size = len(CIFAR10DataModule.classes)
     upscale_size = 256
     from DiffusionModules.EmbeddingTools import CF10EmbeddingProvider
@@ -91,6 +135,41 @@ def load_cf10(path, device):
 
 
 def load_vqgan(path, device, img_size=256, z_channels=3, shared_args=None, encoder_args=None, decoder_args=None, discriminator_args=None, loss_args=None):
+    """
+    Loads a trained VQGAN model from a checkpoint.
+    This was specifically written for the Model trained in my Master's Thesis,
+    therefore most of the parameters are hardcoded.
+
+    :param path: Path to the checkpoint.
+    :param device: Device to load the model on.
+    :param img_size: Size of the input image, default is 256.
+    :param z_channels: Number of channels of the latent space, default is 3.
+    :param shared_args: Shared arguments for the Encoder and Decoder, default is:
+                        z_channels=z_channels,
+                        ch=128,
+                        resolution=256,
+                        num_res_blocks=2,
+                        attn_resolutions=[],
+                        ch_mult=(1,2,4),
+                        dropout=0.0,
+                        emb_size=512,
+                        out_emb_size=1024
+    :param encoder_args: Additional arguments for the Encoder, default is:
+                         in_channels=3,
+                         double_z=False
+    :param decoder_args: Additional arguments for the Decoder, default is:
+                         out_channels=3
+    :param discriminator_args: Arguments for the Discriminator, default is:
+                               input_nc=decoder.out_channels,
+                               n_layers=3,
+                               ndf=64
+    :param loss_args: Arguments for the Loss, default is:
+                      disc_start=0,
+                      disc_weight=0.75,
+                      codebook_weight=1.0,
+                      disc_conditional=False
+    :return: VQModel.
+    """    
     from DiffusionModules.LatentVQGANModules import Encoder, Decoder, NLayerDiscriminator
     from DiffusionModules.LatentVQGANModel import VQModel
     from DiffusionModules.VQGANLosses import VQLPIPSWithDiscriminator
@@ -103,6 +182,7 @@ def load_vqgan(path, device, img_size=256, z_channels=3, shared_args=None, encod
         img_in_target_size=img_size
     ) 
 
+    # Shared args between Encoder and Decoder
     shared_args = dict(
         z_channels=z_channels,
         ch=128,
@@ -115,11 +195,13 @@ def load_vqgan(path, device, img_size=256, z_channels=3, shared_args=None, encod
         out_emb_size=1024
     ) if shared_args is None else shared_args
 
+    # Build Encoder Args
     encoder_args = dict(
         in_channels=3,
         double_z=False
     ) if encoder_args is None else encoder_args
 
+    # Build Encoder
     encoder = Encoder(
         **encoder_args,
         **shared_args
@@ -128,6 +210,7 @@ def load_vqgan(path, device, img_size=256, z_channels=3, shared_args=None, encod
     print("Encoder")
     summary(encoder, [(1, encoder.in_channels, shared_args["resolution"], shared_args["resolution"]), (1, 512)], verbose=1)
 
+    # Build Decoder
     decoder = Decoder(
         out_channels=3,
         **shared_args
@@ -137,12 +220,14 @@ def load_vqgan(path, device, img_size=256, z_channels=3, shared_args=None, encod
     print("Decoder")
     summary(decoder, [(1, z_channels, decoder_in_res, decoder_in_res), (1, 512)], verbose=1)
 
+    # Build Discriminator Args
     discriminator_args = dict(
         input_nc=decoder.out_channels,
         n_layers=3,
         ndf=64
     ) if discriminator_args is None else discriminator_args
 
+    # Build Discriminator
     discriminator = NLayerDiscriminator(
         **discriminator_args
     ).to(device)
@@ -150,6 +235,7 @@ def load_vqgan(path, device, img_size=256, z_channels=3, shared_args=None, encod
     print("Discriminator")
     summary(discriminator, (1, decoder.out_channels, shared_args["resolution"], shared_args["resolution"]), verbose=1)
 
+    # Build Loss Args
     loss_args = dict(
         discriminator=discriminator,
         disc_start=0,
@@ -158,6 +244,7 @@ def load_vqgan(path, device, img_size=256, z_channels=3, shared_args=None, encod
         disc_conditional=False
     ) if loss_args is None else loss_args
 
+    # Build Loss
     loss = VQLPIPSWithDiscriminator(
         **loss_args
     ).to(device)
@@ -180,6 +267,21 @@ def load_vqgan(path, device, img_size=256, z_channels=3, shared_args=None, encod
 
 
 def load_latent_diffusion(path, vqgan_path, device, img_size=256, alt_prov_mode="TRANSLATOR", unet_in_channels=3, vqgan_args=None):
+    """
+    Loads a trained LatentDiffusionTrainer model from a checkpoint.
+    This was specifically written for the Model trained in my Master's Thesis,
+    therefore most of the parameters are hardcoded.
+
+    :param path: Path to the checkpoint.
+    :param vqgan_path: Path to the VQGAN checkpoint.
+    :param device: Device to load the model on.
+    :param img_size: Size of the input image, default is 256.
+    :param alt_prov_mode: Alternative EmbeddingProvider mode, either "TRANSLATOR" or "TEXT" for the 
+                          ClipTranslatorEmbeddingProvider or ClipTextEmbeddingProvider. Default is "TRANSLATOR".
+    :param unet_in_channels: Number of input channels for the UNet, default is 3.
+    :param vqgan_args: Arguments for the VQGAN, default is None.
+    :return: LatentDiffusionTrainer.
+    """    
     ds = WebdatasetDataModule(
         [wds_path],
         [wds_path],
@@ -235,6 +337,16 @@ def load_latent_diffusion(path, vqgan_path, device, img_size=256, alt_prov_mode=
 
 
 def load_spatio_temporal(path, device, after_load_fvd=False):
+    """
+    Loads a trained SpatioTemporalDiffusionTrainer model from a checkpoint.
+    This was specifically written for the Model trained in my Master's Thesis,
+    therefore most of the parameters are hardcoded.
+
+    :param path: Path to the checkpoint.
+    :param device: Device to load the model on.
+    :param after_load_fvd: Whether to load the FVD after loading the model, default is False.
+    :return: SpatioTemporalDiffusionTrainer.
+    """    
     unet_in_channels = 3
     unet_in_size = 64
     unet = SpatioTemporalUNet(

@@ -106,8 +106,10 @@ if not skip_spatio:
     trainer.fit(model, spatial_dataset, ckpt_path=resume_from_checkpoint_path)
 
 temporal_dataset = VideoDatasetDataModule(
-    "/home/shared-data/webvid/results_10M_train.csv", 
-    "/home/shared-data/webvid/data/videos",
+    #"/home/shared-data/webvid/results_10M_train.csv", 
+    #"/home/shared-data/webvid/data/videos",
+    "/home/shared-data/webvid/results_10M_val.csv", 
+    "/home/shared-data/webvid/data_val/videos",
     "/home/shared-data/webvid/results_10M_val.csv", 
     "/home/shared-data/webvid/data_val/videos",
     "/home/shared-data/webvid/results_10M_val.csv", 
@@ -130,7 +132,7 @@ model = SpatioTemporalDiffusionTrainer(
     embedding_provider=ClipEmbeddingProvider(clip_tools=clip_tools),
     temporal_embedding_provider=ClipTextEmbeddingProvider(clip_tools=clip_tools),
     temporal=True,
-    disable_temporal_embs=False
+    #disable_temporal_embs=False
 )
 
 temporal_lr_monitor = cb.LearningRateMonitor(logging_interval='epoch')

@@ -10,6 +10,7 @@ from torchmetrics.image.fid import FrechetInceptionDistance
 from torchmetrics.multimodal import CLIPScore
 
 from DiffusionModules.DiffusionModels import ExponentialMovingAverage
+from DiffusionModules.DiffusionTrainer import get_fid_score
 from DiffusionModules.EmbeddingTools import ClipEmbeddingProvider
 
 
@@ -34,6 +35,32 @@ class LatentDiffusionTrainer(pl.LightningModule):
         quantize_after_sample=True,
         sample_images_out_base_path="samples/"
     ):
+        """
+        Creates a LatentDiffusionTrainer for training a latent diffusion model
+        with a given unet and vqgan model.
+
+        :param unet: UNet model.
+        :param vqgan: VQGAN model.
+        :param latent_shape: Shape of the latent space produced by the VQGAN model.
+        :param diffusion_tools: DiffusionTools object.
+        :param transformable_data_module: TransformableDataModule object.
+        :param loss: Loss function, defaults to MSELoss
+        :param val_score: Validation score function to use in validation process. This should only be changed from none in a
+                          few edge cases since the whole process is not tested with other validation scores. Val score should
+                          always return a dict with atleast the key fid_score in it. defaults to a FID score and a CLIP score.
+        :param embedding_provider: Instance of a BaseEmbeddingProvider to use for getting the embeddings. Defaults to a ClipEmbeddingProvider
+        :param alt_validation_emb_provider: Alternative instance of a BaseEmbeddingProvider to use for getting the embeddings in the validation process. 
+                                            Defaults to the same as embedding_provider.
+        :param ema_beta: beta value for the exponential moving average model. If None no ema model is trained, defaults to 0.9999
+        :param cfg_train_ratio: Ratio of unconditional training steps to conditional training steps, defaults to 0.1
+        :param cfg_scale: Extrapolation factor of the sample process with classifier free guidance, defaults to 3
+        :param captions_preprocess: Additional function for preprocessing the captions, defaults to None
+        :param optimizer: Optimizer to use in train process, defaults to optim.AdamW(model.parameters(), lr=9.6e-5, weight_decay=0.0)
+        :param checkpoint_every_val_epochs: Check and output a checkpoint every checkpoint_every_val_epochs epochs 
+                                            if the validation score is lower than the previous checkpoint, defaults to 10
+        :param quantize_after_sample: Should the sampled latents be quantized after sampling, defaults to True
+        :param sample_images_out_base_path: Base path for saving the sampled images, defaults to "samples/"
+        """        
         super().__init__()
         self.unet = unet
         self.vqgan = vqgan.eval()
@@ -67,19 +94,11 @@ class LatentDiffusionTrainer(pl.LightningModule):
         if val_score is None:
             self.fid = FrechetInceptionDistance(feature=2048)
             
-            def get_fid_score(samples, real):
-                self.fid.reset()
-                self.fid.update((((samples + 1)/2)*255).byte(), real=False)
-                self.fid.update((((real + 1)/2)*255).byte(), real=True)
-                fid = self.fid.compute()
-                self.fid.reset()
-                return fid
-            
             self.clip_model = CLIPScore(model_name_or_path="openai/clip-vit-base-patch32").eval()
             
             self.val_score = lambda samples, real, captions: {
                 "clip_score": self.clip_model((((samples + 1)/2)*255).int(), captions),
-                "fid_score": get_fid_score(samples, real)
+                "fid_score": get_fid_score(self.fid, samples, real)
             }
         else:
             self.val_score = val_score
@@ -87,16 +106,37 @@ class LatentDiffusionTrainer(pl.LightningModule):
         self.save_hyperparameters(ignore=["embedding_provider", "unet", "vqgan"])
     
     def diff_norm_tensor(self, in_tensor):
+        """
+        Normalizes the tensor to the range [-1, 1] from the range [codebook_min, codebook_max].
+        This is done after encoding the images and before training with the diffusion process.
+
+        :param in_tensor: Input tensor.
+        :return: Normalized tensor.
+        """        
         min_val, max_val = self.codebook_min, self.codebook_max
         scaled_tensor = ((in_tensor - min_val) / (max_val - min_val)) * 2 - 1
         return scaled_tensor
 
     def codebook_norm_tensor(self, in_tensor):
+        """
+        Normalizes the tensor to the range [codebook_min, codebook_max] from the range [-1, 1].
+        This is done before decoding the sampled latents.
+
+        :param in_tensor: Input tensor.
+        :return: 
+        """        
         min_val, max_val = self.codebook_min, self.codebook_max
         scaled_tensor = (((in_tensor + 1) / 2) * (max_val - min_val)) + min_val
         return scaled_tensor
 
     def training_step(self, batch, batch_idx):
+        """
+        Training step for the latent diffusion process.
+
+        :param batch: Batch of images and captions.
+        :param batch_idx: Batch index.
+        :return: Loss value.
+        """        
         images, captions = batch
         captions = self.captions_preprocess(captions) if self.captions_preprocess is not None else captions
         i_embs_req = self.embedding_provider.get_embedding(images, captions).to(self.device)
@@ -106,6 +146,7 @@ class LatentDiffusionTrainer(pl.LightningModule):
             i_embs = None
         images = self.transformable_data_module.transform_batch(images).to(self.device)    
         with torch.no_grad():
+            # Encode the images, quantize the latents and normalize the latents.
             latents, _, _ = self.vqgan.encode(images, emb=i_embs_req)
             latents, _, _ = self.vqgan.quantize(latents)
             latents = self.diff_norm_tensor(latents)
@@ -115,10 +156,20 @@ class LatentDiffusionTrainer(pl.LightningModule):
         return loss
     
     def on_train_batch_end(self, outputs, batch, batch_idx):
+        """
+        Updates the exponential moving average model after every training batch.
+        """        
         if self.ema is not None:
             self.ema.step_ema(self.ema_unet, self.unet)
         
     def validation_step(self, batch, batch_idx):
+        """
+        Validation step for the latent diffusion process.
+
+        :param batch: Batch of images and captions.
+        :param batch_idx: Batch index.
+        :return: Validation score.
+        """        
         images, captions = batch
         captions = self.captions_preprocess(captions) if self.captions_preprocess is not None else captions    
         i_embs = self.alt_validation_emb_provider.get_embedding(images, captions).to(self.device)
@@ -126,12 +177,15 @@ class LatentDiffusionTrainer(pl.LightningModule):
 
         latent_batch_shape = (images.shape[0], *self.latent_shape)
         sampled_latents = self.diffusion_tools.sample_data(self.unet, latent_batch_shape, i_embs, self.cfg_scale)
+        # Normalize the sampled latents to the codebook range.
         sampled_latents = self.codebook_norm_tensor(sampled_latents)
+        # If quantize_after_sample is true, quantize the sampled latents.
         if self.quantize_after_sample:
             sampled_latents, _, _ = self.vqgan.quantize(sampled_latents)
         samples_images = self.vqgan.decode(sampled_latents, emb=i_embs, clamp=True)
         self.save_sampled_images(samples_images, captions, batch_idx, "normal")
 
+        # Repeat the same process for the exponential moving average model if it exists.
         if self.ema is not None:
             ema_sampled_latents = self.diffusion_tools.sample_data(self.ema_unet, latent_batch_shape, i_embs, self.cfg_scale)
             ema_sampled_latents = self.codebook_norm_tensor(ema_sampled_latents)
@@ -150,6 +204,11 @@ class LatentDiffusionTrainer(pl.LightningModule):
         return val_score
     
     def on_validation_epoch_end(self):
+        """
+        Saves a checkpoint if the validation score is lower than the previous checkpoint
+        and the current epoch is a multiple of checkpoint_every_val_epochs. Also
+        saves a checkpoint at the end of every validation epoch which overwrites the previous one.
+        """        
         avg_dict = dict()
         outs = self.validation_step_outputs
         
@@ -178,6 +237,14 @@ class LatentDiffusionTrainer(pl.LightningModule):
             
         
     def save_sampled_images(self, sampled_images, captions, batch_idx, note=None):
+        """
+        Saves the sampled images and captions to a folder.
+
+        :param sampled_images: Sampled images.
+        :param captions: Captions for the sampled images.
+        :param batch_idx: Batch index.
+        :param note: Additional note to add to the folder name, defaults to None
+        """        
         epoch = self.current_epoch
         note = f"_{note}" if note is not None else ""
         path_folder = f"{self.sample_images_out_base_path}/{str(epoch)}_{str(batch_idx)}{note}/"
@@ -199,6 +266,11 @@ class LatentDiffusionTrainer(pl.LightningModule):
         
     
     def configure_optimizers(self):
+        """
+        Configures the optimizers and learning rate schedulers for the training process.
+
+        :return: Dictionary with the optimizer and the learning rate scheduler.
+        """        
         # sch = torch.optim.lr_scheduler.StepLR(optimizer, step_size  = 10, gamma = lr_decay)      
         lr = self.optimizer.param_groups[-1]['lr']
         sch = optim.lr_scheduler.ReduceLROnPlateau(self.optimizer, factor=0.8, patience=2, min_lr=lr/100)

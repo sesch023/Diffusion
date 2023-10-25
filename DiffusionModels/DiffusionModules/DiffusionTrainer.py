@@ -114,7 +114,8 @@ class DiffusionTrainer(pl.LightningModule):
         :param optimizer: Optimizer to use in train process, defaults to optim.AdamW(model.parameters(), lr=3e-4, weight_decay=0.0)
         :param sample_upscaler_mode: Defines the method of upscaling the data, defaults to UpscalerMode.LDM
         :param sample_scale_factor: Defines the scale factor of the upscaling this should not be higher than 4, defaults to 4
-        :param checkpoint_every_val_epochs: Check and output a checkpoint every checkpoint_every_val_epochs epochs, defaults to 10
+        :param checkpoint_every_val_epochs: Check and output a checkpoint every checkpoint_every_val_epochs epochs 
+                                            if the validation score is lower than the previous checkpoint, defaults to 10
         :param no_up_samples_out: Output the samples without upscaling, defaults to True
         :param sample_images_out_base_path: Output path of the samples, defaults to "samples/"
         :param c_device: Device to work on. This is needed separetly with the final target since some models dont move with the "to" method, 
