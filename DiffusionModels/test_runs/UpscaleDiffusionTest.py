@@ -1,4 +1,5 @@
 import sys
+import os
 sys.path.append("../")
 
 import torch
@@ -6,17 +7,21 @@ import torch
 from DiffusionModules.DataModules import WebdatasetDataModule
 from DiffusionModules.ModelLoading import load_udm
 from DiffusionModules.EmbeddingTools import ClipTools, ClipTextEmbeddingProvider
+from Configs import ModelLoadConfig, DatasetLoadConfig, RunConfig
 
-gpus=[2]
+gpus=[0]
 device = f"cuda:{str(gpus[0])}" if torch.cuda.is_available() else "cpu"
+start_n = 0
+n = 12
+batch_size = 4
+report_path = "UpscaleDiffusion_report_3/"
 
-report_path = "UpscaleDiffusion_report_2/"
-path = "~/upscaler.ckpt"
+if not os.path.exists(report_path):
+    os.makedirs(report_path)
+
+path = ModelLoadConfig.upscaler_model_path
 model = load_udm(path, device, upscale_size=256)
 model.sample_images_out_base_path = report_path
-start_n = 0
-n = 250
-batch_size = 4
 
 scores = []
 scores_text = []
@@ -80,9 +85,9 @@ def sample_from_diffusion_trainer(trainer, captions, images, device, batch_idx, 
 
 
 dl = WebdatasetDataModule(
-    ["/home/archive/CC12M/cc12m/{00000..01242}.tar", "/home/archive/CC3M/cc3m/{00000..00331}.tar"],
-    ["/home/archive/CocoWebdatasetFullScale/mscoco/{00000..00040}.tar"],
-    ["/home/archive/CocoWebdatasetFullScale/mscoco/{00041..00059}.tar"],
+    DatasetLoadConfig.cc_3m_12m_paths,
+    DatasetLoadConfig.coco_val_path,
+    DatasetLoadConfig.coco_test_path,
     batch_size=batch_size,
     num_workers=4,
     img_in_target_size=256

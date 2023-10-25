@@ -1,20 +1,26 @@
 import sys
+import os
 sys.path.append("../")
 import torch
 
 from DiffusionModules.DataModules import CIFAR10DataModule
 from DiffusionModules.ModelLoading import load_cf10
+from DiffusionModules.EmbeddingTools import ClipTools, ClipTextEmbeddingProvider
 
-gpus=[1]
+gpus=[ß]
 device = f"cuda:{str(gpus[0])}" if torch.cuda.is_available() else "cpu"
 
-report_path = "CF10_report/"
-path = "../samples_cifar_final/4499_model.ckpt"
-model = load_cf10(path, device)
-model.sample_images_out_base_path = report_path
+report_path = "CF10_report_2/"
+path = ModelLoadConfig.cf10_diffusion_path
 batch_size = 16
 start_n = 0
 n = 1000
+
+if not os.path.exists(report_path):
+    os.makedirs(report_path)
+
+model = load_cf10(path, device)
+model.sample_images_out_base_path = report_path
 
 scores = []
 

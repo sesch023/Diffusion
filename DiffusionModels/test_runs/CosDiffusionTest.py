@@ -1,4 +1,5 @@
 import sys
+import os
 sys.path.append("../")
 
 import torch
@@ -6,17 +7,21 @@ import torch
 from DiffusionModules.DataModules import WebdatasetDataModule
 from DiffusionModules.EmbeddingTools import ClipTools, ClipTextEmbeddingProvider
 from DiffusionModules.ModelLoading import load_wdm
+from Configs import ModelLoadConfig, DatasetLoadConfig, RunConfig
 
 gpus=[0]
 device = f"cuda:{str(gpus[0])}" if torch.cuda.is_available() else "cpu"
 
-report_path = "CosDiffusion_report/"
-path = "../samples_cos_diffusion/7099_model.ckpt"
+report_path = "CosDiffusion_report_2/"
+path = ModelLoadConfig.cos_diffusion_path
 model = load_wdm(path, device, alt_prov_mode="TRANSLATOR")
 model.sample_images_out_base_path = report_path
 batch_size = 4
-start_n = 231
+start_n = 0
 n = 1000
+
+if not os.path.exists(report_path):
+    os.makedirs(report_path)
 
 scores = []
 scores_translator = []

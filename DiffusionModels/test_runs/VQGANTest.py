@@ -1,4 +1,5 @@
 import sys
+import os
 sys.path.append("../")
 
 import torch
@@ -6,17 +7,22 @@ import torch
 from DiffusionModules.DataModules import WebdatasetDataModule
 from DiffusionModules.ModelLoading import load_vqgan
 from DiffusionModules.EmbeddingTools import ClipTools, ClipEmbeddingProvider, ClipTranslatorEmbeddingProvider, ClipTextEmbeddingProvider
+from Configs import ModelLoadConfig, DatasetLoadConfig, RunConfig
 
-gpus=[1]
+gpus=[0]
 device = f"cuda:{str(gpus[0])}" if torch.cuda.is_available() else "cpu"
-
-report_path = "VQGAN_report_2/"
-load_path = "../vqgan.ckpt"
-model = load_vqgan(load_path, device=device)
-model.reconstructions_out_base_path = report_path
+report_path = "VQGAN_report_3/"
 batch_size = 4
 start_n = 0
 n = 1000
+
+if not os.path.exists(report_path):
+    os.makedirs(report_path)
+
+load_path = ModelLoadConfig.vqgan_path
+model = load_vqgan(load_path, device=device)
+model.reconstructions_out_base_path = report_path
+
 
 scores = []
 scores_text = []
@@ -56,9 +62,9 @@ def forward_vqgan(trainer, captions, images, device, batch_idx, text_emb_provide
     print(f"Mean Rec Loss Text: {mean_rec_text}")
 
 dm = WebdatasetDataModule(
-    ["/home/archive/CC12M/cc12m/{00000..01242}.tar", "/home/archive/CC3M/cc3m/{00000..00331}.tar"],
-    ["/home/archive/CocoWebdatasetFullScale/mscoco/{00000..00040}.tar"],
-    ["/home/archive/CocoWebdatasetFullScale/mscoco/{00041..00059}.tar"],
+    DatasetLoadConfig.cc_3m_12m_paths,
+    DatasetLoadConfig.coco_val_path,
+    DatasetLoadConfig.coco_test_path,
     batch_size=batch_size,
     num_workers=4,
     img_in_target_size=256

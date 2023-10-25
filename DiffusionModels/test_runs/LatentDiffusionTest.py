@@ -1,4 +1,5 @@
 import sys
+import os
 sys.path.append("../")
 
 import torch
@@ -6,18 +7,22 @@ import torch
 from DiffusionModules.DataModules import WebdatasetDataModule
 from DiffusionModules.EmbeddingTools import ClipTools, ClipTranslatorEmbeddingProvider
 from DiffusionModules.ModelLoading import load_latent_diffusion
+from Configs import ModelLoadConfig, DatasetLoadConfig, RunConfig
 
-gpus=[1]
+gpus=[0]
 device = f"cuda:{str(gpus[0])}" if torch.cuda.is_available() else "cpu"
+report_path = "LatentDiffusion_report_2/"
+batch_size = 4
+start_n = 0
+n = 1000
 
-report_path = "LatentDiffusion_report/"
-path = "../samples_laten_diffusion/7999_model.ckpt"
-vqgan_path = "../vqgan.ckpt"
+if not os.path.exists(report_path):
+    os.makedirs(report_path)
+
+path = ModelLoadConfig.latent_diffusion_path
+vqgan_path = ModelLoadConfig.vqgan_path
 model = load_latent_diffusion(path, vqgan_path, device, alt_prov_mode="TEXT")
 model.sample_images_out_base_path = report_path
-batch_size = 4
-start_n = 112
-n = 1000
 
 scores = []
 scores_translator = []
@@ -75,15 +80,15 @@ def sample_from_diffusion_trainer(trainer, captions, images, device, batch_idx, 
     print(f"Mean Text CLIP score: {mean_clip}")
 
 dl = WebdatasetDataModule(
-    ["/home/archive/CC12M/cc12m/{00000..01242}.tar", "/home/archive/CC3M/cc3m/{00000..00331}.tar"],
-    ["/home/archive/CocoWebdatasetFullScale/mscoco/{00000..00040}.tar"],
-    ["/home/archive/CocoWebdatasetFullScale/mscoco/{00041..00059}.tar"],
+    DatasetLoadConfig.cc_3m_12m_paths,
+    DatasetLoadConfig.coco_val_path,
+    DatasetLoadConfig.coco_test_path,
     batch_size=batch_size,
     num_workers=4
 ).test_dataloader()
 
 clip_tools = ClipTools(device=device)
-translator_model_path = "../clip_translator/model.ckpt"
+translator_model_path = ModelLoadConfig.clip_translator_path
 translator_emb_provider = ClipTranslatorEmbeddingProvider(clip_tools=clip_tools, translator_model_path=translator_model_path)
 
 limit_batches = n//batch_size + 1

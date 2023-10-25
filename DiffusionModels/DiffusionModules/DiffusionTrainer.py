@@ -62,6 +62,7 @@ def get_fid(fid, samples, real):
     :param real: Real images to calculate the FID score to.
     :return: FID score of the samples compared to the real images.
     """    
+    print(fid)
     fid.reset()
     fid.update((((samples + 1)/2)*255).byte(), real=False)
     fid.update((((real + 1)/2)*255).byte(), real=True)
@@ -172,7 +173,6 @@ class DiffusionTrainer(pl.LightningModule):
         
         # This whole definition is not a very nice solution but it works for now.
         if val_score is None:
-            
             self.fid = FrechetInceptionDistance(feature=2048)
             
             self.clip_model = CLIPScore(model_name_or_path="openai/clip-vit-base-patch32").eval()
