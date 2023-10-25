@@ -281,7 +281,14 @@ class DiffusionTools():
                 model_var = (model_var + 1) / 2
                 model_log_variance = model_var * log_schedule + (1 - model_var) * posterior_log_variance
             
-            # Calculate the KL-Divergence between the real and the model distributions for every timestep except the first.
+            # Prediction of the mean.
+            recip_alphas_cum = self._sqrt_recip_alphas_cumprod[ts][:, None, None, None]
+            recipm1_alphas_cum = self._sqrt_recipm1_alphas_cumprod[ts][:, None, None, None]
+            pred_x_start = recip_alphas_cum * x_t - recipm1_alphas_cum * predicted_frozen
+            model_mean = mean_coef_1 * pred_x_start + mean_coef_2 * x_t      
+
+            # Calculate the KL-Divergence between the real and the model distributions for every 
+            # timestep except the first.
             k1 = VLBDiffusionLoss.kl_divergence(
                 posterior_mean, 
                 posterior_log_variance,

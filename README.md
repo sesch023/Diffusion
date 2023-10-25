@@ -73,13 +73,13 @@ In diesem Abschnitt werden kurz die Modelle der Train-Dateien beschrieben. Dabei
 
 Hinweis: Vom Download des Upscaler-Modells kann theoretisch abgesehen werden, wenn im DiffusionTrainer ein anderer UpscalerMode als "UDM" übergeben wird. Dem USB-Stick der Abgabe liegen alle drei Modelle bei.
 
-- Upscaler-Modell
-- VQGAN-Modell
-- CLIP-Translator-Modell
+- [Upscaler-Modell](https://fh-swf.sciebo.de/s/2PCI2AgLHKD7OBR)
+- [VQGAN-Modell](https://fh-swf.sciebo.de/s/x5A03VOV3BWzZ1y)
+- [CLIP-Translator-Modell](https://fh-swf.sciebo.de/s/DdfuXGplCyNLtIr)
 
 ## Downloads-Datensätze:
 
-Anmerkungen für den Download mit img2dataset: Der Standardbefehl für den Download fügt eine weiße Border zu Bildern einer nicht quadratischen Form hinzu. Dies ist für die Diffusion ungünstig. Die implementierten DataModules können mit nicht quadratischen Daten umgehen. Ein Download sollte daher entweder in originaler Auflösung oder mit der Option "keep_ratio" des Parameters "resize_mode" erfolgen. Der Download aller img2dataset Datensätze sollte mindestens mit der Größe 256 erfolgen!
+Anmerkungen für den Download mit img)dataset: Der Standardbefehl für den Download fügt eine weiße Border zu Bildern einer nicht quadratischen Form hinzu. Dies ist für die Diffusion ungünstig. Die implementierten DataModules können mit nicht quadratischen Daten umgehen. Ein Download sollte daher entweder in originaler Auflösung oder mit der Option "keep_ratio" des Parameters "resize_mode" erfolgen. Der Download aller img2dataset Datensätze sollte mindestens mit der Größe 256 erfolgen!
 
 - [CIFAR-10-64](https://www.kaggle.com/datasets/joaopauloschuler/cifar10-64x64-resized-via-cai-super-resolution)
 - [MS COCO](https://github.com/rom1504/img2dataset/blob/main/dataset_examples/mscoco.md)
