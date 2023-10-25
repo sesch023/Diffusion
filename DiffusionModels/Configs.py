@@ -4,3 +4,6 @@ class ModelLoadConfig:
 
 class DatasetLoadConfig:
     cifar_10_64_path = "/home/archive/cifar10-64"
+    
+class RunConfig:
+    debug = False

@@ -1,18 +1,20 @@
-from lightning.pytorch import LightningDataModule
-from DiffusionModules.Util import ImageTransformer
 from abc import ABC, abstractmethod
+import functools
+from collections import OrderedDict
+import operator
+from enum import Enum
+
+from lightning.pytorch import LightningDataModule
 import torch
 import torchvision
 import braceexpand
-import operator
-import functools
-from enum import Enum
 from WebvidReader.VideoDataset import VideoDataset
 import webdataset as wds
 from torch.nn.utils.rnn import pad_sequence
 from torch.utils.data import DataLoader
-from collections import OrderedDict
+
 from Configs import DatasetLoadConfig
+from DiffusionModules.Util import ImageTransformer
 
 
 class CollateTypeFunction():
