@@ -139,3 +139,17 @@ class ImageTransformer():
         :return: Reverse transformed batch of images.
         """        
         return [self.reverse_transform_image(tensor) for tensor in tensors]
+
+def calculate_mean(items, key):
+    """
+    Calculates the mean of a list of dictionaries with the given key for each dictionary.
+
+    :param items: List of dictionaries to calculate the mean for a key.
+    :param key: Key to use for the mean calculation.
+    :return: Mean of the given key for each dictionary in the list.
+    """    
+    sum_d = 0
+    for item in items:
+        sum_d += item[key]
+
+    return sum_d / len(items)
