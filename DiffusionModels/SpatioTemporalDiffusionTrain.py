@@ -71,7 +71,7 @@ captions_preprocess = lambda captions: [cap[:77] for cap in captions]
 
 clip_tools = ClipTools(device=device)
 translator_model_path = "clip_translator/model.ckpt"
-sample_out_base_path="samples_spatio_temporal/"
+sample_out_base_path="samples_spatio_temporal_test/"
 old_checkpoint = glob.glob(f"{sample_out_base_path}/latest.ckpt")
 old_checkpoint = old_checkpoint if len(old_checkpoint) > 0 else glob.glob(f"{sample_out_base_path}/*.ckpt")
 resume_from_checkpoint_path = None if not resume_from_checkpoint else old_checkpoint[0] if len(old_checkpoint) > 0 else None
@@ -129,7 +129,8 @@ model = SpatioTemporalDiffusionTrainer(
     checkpoint_every_val_epochs=1,
     embedding_provider=ClipEmbeddingProvider(clip_tools=clip_tools),
     temporal_embedding_provider=ClipTextEmbeddingProvider(clip_tools=clip_tools),
-    temporal=True
+    temporal=True,
+    disable_temporal_embs=False
 )
 
 temporal_lr_monitor = cb.LearningRateMonitor(logging_interval='epoch')
