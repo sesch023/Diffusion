@@ -1,5 +1,6 @@
 import sys
 import os
+import math
 sys.path.append("../")
 
 import torch
@@ -10,9 +11,16 @@ from DiffusionModules.EmbeddingTools import ClipTools, ClipEmbeddingProvider, Cl
 from Configs import ModelLoadConfig, DatasetLoadConfig, RunConfig
 from DiffusionModules.Util import calculate_mean
 
+"""
+Tests for a VQGAN model.
+
+The results of this model were described in the chapter:
+7.4. VQGANs und latente Diffusion
+"""
+
 gpus=[0]
 device = f"cuda:{str(gpus[0])}" if torch.cuda.is_available() else "cpu"
-report_path = "VQGAN_report_3/"
+report_path = "VQGAN_report/"
 batch_size = 4
 start_n = 0
 n = 1000
@@ -90,8 +98,8 @@ i = start_n
 # Forward pass with different embeddings
 for images, captions in dl:
     forward_vqgan(model, captions, images, device, i, text_emb_provider)
-    print(f"Batch {i} of {limit_batches} done.")
     i += 1
+    print(f"Batch {i} of {limit_batches} done.")
     if i >= limit_batches:
         break
 

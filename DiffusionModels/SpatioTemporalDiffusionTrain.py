@@ -47,14 +47,12 @@ spatial_dataset = WebdatasetDataModule(
 
 # Initialize the data module for the temporal model
 temporal_dataset = VideoDatasetDataModule(
-    #"/home/shared-data/webvid/results_10M_train.csv", 
-    #"/home/shared-data/webvid/data/videos",
-    "/home/archive/Webvid/webvid_10M/results_10M_val.csv", 
-    "/home/archive/Webvid/webvid_10M/val/videos",
-    "/home/archive/Webvid/webvid_10M/results_10M_val.csv", 
-    "/home/archive/Webvid/webvid_10M/val/videos",
-    "/home/archive/Webvid/webvid_10M/results_10M_val.csv", 
-    "/home/archive/Webvid/webvid_10M/val/videos",
+    DatasetLoadConfig.webvid_10m_train_csv,
+    DatasetLoadConfig.webvid_10m_train_data,
+    DatasetLoadConfig.webvid_10m_val_csv,
+    DatasetLoadConfig.webvic_10m_val_data,
+    DatasetLoadConfig.webvid_10m_val_csv,
+    DatasetLoadConfig.webvic_10m_val_data,
     batch_size=batch_size,
     num_workers=num_workers,
     nth_frames=1,

@@ -20,10 +20,10 @@ The results of this model were described in the chapter:
 gpus=[0]
 device = f"cuda:{str(gpus[0])}" if torch.cuda.is_available() else "cpu"
 start_n = 0
-n = 1000
+n = 12
 batch_size = 4
 low_res_embs = True
-report_path = "UpscaleDiffusion_report_3/"
+report_path = "UpscaleDiffusion_report/"
 
 if not os.path.exists(report_path):
     os.makedirs(report_path)

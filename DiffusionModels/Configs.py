@@ -11,6 +11,8 @@ class ModelLoadConfig:
     diffusion_path = "/home/archive/schmidt_models/diffusion_model.ckpt"
     # Pato the the CIFAR-10 Diffusion model
     cf10_diffusion_path = "/home/archive/schmidt_models/cf10_diffusion_model.ckpt"
+    # Path to the Spatio-Temporal Diffusion model
+    spatio_temporal_path = "/home/archive/schmidt_models/spatio_temporal_diff_model.ckpt"
 
 class DatasetLoadConfig:
     # Path to the CIFAR-10 dataset
@@ -20,6 +22,15 @@ class DatasetLoadConfig:
     # Path to the COCO dataset, which was used for validation and testing. A different path was used for each purpose.
     coco_val_path = ["/home/archive/CocoWebdatasetFullScale/mscoco/{00000..00040}.tar"]
     coco_test_path = ["/home/archive/CocoWebdatasetFullScale/mscoco/{00041..00059}.tar"]
+    # Path to the Webvid-10M dataset csv file
+    webvid_10m_train_csv = "/home/shared-data/webvid/results_10M_train.csv"
+    # Path to the Webvid-10M dataset train video folder
+    webvid_10m_train_data = "/home/shared-data/webvid/data/videos"
+    # Path to the validation csv file of the Webvid-10M dataset
+    webvid_10m_val_csv = "/home/shared-data/webvid/results_10M_val.csv"
+    # Path to the validation video folder of the Webvid-10M dataset
+    webvic_10m_val_data = "/home/shared-data/webvid/data_val/videos"
     
 class RunConfig:
+    # Enable debugging mode for certain wandb outputs
     debug = False
