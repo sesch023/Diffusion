@@ -10,7 +10,7 @@ from torchmetrics.image.fid import FrechetInceptionDistance
 from torchmetrics.multimodal import CLIPScore
 
 from DiffusionModules.DiffusionModels import ExponentialMovingAverage
-from DiffusionModules.DiffusionTrainer import get_fid_score
+from DiffusionModules.DiffusionTrainer import get_fid
 from DiffusionModules.EmbeddingTools import ClipEmbeddingProvider
 
 
@@ -98,7 +98,7 @@ class LatentDiffusionTrainer(pl.LightningModule):
             
             self.val_score = lambda samples, real, captions: {
                 "clip_score": self.clip_model((((samples + 1)/2)*255).int(), captions),
-                "fid_score": get_fid_score(self.fid, samples, real)
+                "fid_score": get_fid(self.fid, samples, real)
             }
         else:
             self.val_score = val_score

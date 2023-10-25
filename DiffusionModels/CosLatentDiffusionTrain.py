@@ -25,7 +25,6 @@ device = f"cuda:{str(gpus[0])}" if torch.cuda.is_available() else "cpu"
 batch_size = 4
 num_workers = 4
 captions_preprocess = lambda captions: [cap[:77] for cap in captions]
-translator_model_path = ModelLoadConfig.clip_translator_path
 sample_images_out_base_path="samples_cos_latent_diffusion/"
 latent_shape = (3, 64, 64)
 # Should the training resume from the latest checkpoint in the sample_images_out_base_path?

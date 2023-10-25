@@ -14,7 +14,7 @@ device = f"cuda:{str(gpus[0])}" if torch.cuda.is_available() else "cpu"
 report_path = "LatentDiffusion_report_2/"
 batch_size = 4
 start_n = 0
-n = 1000
+n = 8
 
 if not os.path.exists(report_path):
     os.makedirs(report_path)
@@ -88,7 +88,7 @@ dl = WebdatasetDataModule(
 ).test_dataloader()
 
 clip_tools = ClipTools(device=device)
-translator_model_path = ModelLoadConfig.clip_translator_path
+translator_model_path = ModelLoadConfig.translator_model_path
 translator_emb_provider = ClipTranslatorEmbeddingProvider(clip_tools=clip_tools, translator_model_path=translator_model_path)
 
 limit_batches = n//batch_size + 1
@@ -96,8 +96,8 @@ i = start_n
 
 for images, captions in dl:
     sample_from_diffusion_trainer(model, captions, images, device, i, translator_emb_provider)
-    print(f"Batch {i} of {limit_batches - 1} done.")
     i += 1
+    print(f"Batch {i} of {limit_batches - 1} done.")
     if i >= limit_batches:
         break
 

@@ -12,7 +12,7 @@ from Configs import ModelLoadConfig, DatasetLoadConfig, RunConfig
 gpus=[0]
 device = f"cuda:{str(gpus[0])}" if torch.cuda.is_available() else "cpu"
 start_n = 0
-n = 12
+n = 1000
 batch_size = 4
 report_path = "UpscaleDiffusion_report_3/"
 

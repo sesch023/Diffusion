@@ -24,7 +24,7 @@ batch_size = 4
 gpus=[0]
 device = f"cuda:{str(gpus[0])}" if torch.cuda.is_available() else "cpu"
 captions_preprocess = lambda captions: [cap[:77] for cap in captions]
-translator_model_path = ModelLoadConfig.clip_translator_path
+translator_model_path = ModelLoadConfig.translator_model_path
 sample_images_out_base_path= "samples_cos_diffusion_rand_emb/"
 # Should the training resume from the latest checkpoint in the sample_images_out_base_path?
 resume_from_checkpoint = True
