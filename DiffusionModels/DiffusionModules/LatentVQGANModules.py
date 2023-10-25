@@ -506,7 +506,7 @@ class VectorQuantizer(nn.Module):
         # specify legacy=False to fix it.
 
         :param n_codebook_embeddings: Number of codebook embeddings.
-        :param codebook_embedding_size: Size of the codebook embeddings. This equals the z_channels of the encoder and decoder.
+        :param codebook_embedding_size: Size of the codebook embeddings. 
         :param beta: Beta parameter for the loss. This is the weight of the commitment loss.
         :param legacy: Whether to use the legacy version of the loss, defaults to False
         """        

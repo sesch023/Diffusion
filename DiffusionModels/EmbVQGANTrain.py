@@ -120,8 +120,6 @@ trainer = pl.Trainer(
     num_sanity_val_steps=0, 
     max_epochs=20000, 
     logger=wandb_logger, 
-    #gradient_clip_val=0.008, 
-    #gradient_clip_algorithm="norm", 
     devices=gpus
 )
 

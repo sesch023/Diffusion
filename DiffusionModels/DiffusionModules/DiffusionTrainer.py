@@ -209,7 +209,7 @@ class DiffusionTrainer(pl.LightningModule):
         self.log("train_loss", loss, on_step=False, on_epoch=True, prog_bar=True, batch_size=images.shape[0])
         return loss
     
-    def on_train_batch_end(self, pl_module, outputs, batch, batch_idx):
+    def on_train_batch_end(self, outputs, batch, batch_idx):
         """
         Updates the exponential moving average model at the end of a train epoch if ema_beta is not None.
         """        
@@ -475,7 +475,7 @@ class UpscalerDiffusionTrainer(pl.LightningModule):
         self.log("train_loss", loss, on_step=False, on_epoch=True, prog_bar=True, batch_size=images.shape[0])
         return loss
     
-    def on_train_batch_end(self, pl_module, outputs, batch, batch_idx):
+    def on_train_batch_end(self, outputs, batch, batch_idx):
         """
         Updates the exponential moving average model at the end of a train epoch if ema_beta is not None.
         """        

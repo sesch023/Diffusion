@@ -6,7 +6,14 @@ import lightning.pytorch as pl
 from DiffusionModules.LatentVQGANModules import Encoder, Decoder, VectorQuantizer
 from DiffusionModules.VQGANLosses import VQLPIPSWithDiscriminator
 
+"""
+This Module was adapted from:
+ https://github.com/CompVis/taming-transformers
+"""
 
+"""
+Default Encoder and Decoder Arguments for VQGANs
+"""
 DEFAULT_ENCODER_ARGS = dict(
     ch=128,
     in_channels=3,
@@ -33,7 +40,6 @@ DEFAULT_DECODER_ARGS = dict(
 )
 
 class VQModel(pl.LightningModule):
-    # Adapted from https://github.com/CompVis/taming-transformers/blob/master/taming/models/vqgan.py
     def __init__(
         self,
         encoder,
@@ -46,20 +52,41 @@ class VQModel(pl.LightningModule):
         image_key="data",
         monitor=None,
         remap=None,
-        sane_index_shape=False,  # tell vector quantizer to return indices as bhw
+        sane_index_shape=False,  
         reconstructions_out_base_path = "reconstructions/",
         checkpoint_every_val_epochs = 1,
         learning_rate=4.5e-6,
         caption_key="caption",
         embedding_provider=None
     ):
+        """
+        VQGAN model for training and creating reconstructions.
+
+        :param encoder: Encoder for the model.
+        :param decoder: Decoder for the model.
+        :param loss: Loss function for the model. This should be a VQLPIPSWithDiscriminator, defaults to VQLPIPSWithDiscriminator(disc_start=10000)
+        :param transformable_data_module: Data module for the model.
+        :param n_codebook_embeddings: Number of codebook embeddings.
+        :param codebook_embedding_size: Size of the codebook embeddings. 
+        :param z_channels: 
+        :param image_key: Key for the image in the batch, defaults to "data"
+        :param monitor: Which value to monitor, defaults to None
+        :param reconstructions_out_base_path: Base path for the reconstructions, defaults to "reconstructions/"
+        :param checkpoint_every_val_epochs: Create a checkpoint every x validation epochs if the validation loss is lower than the previous checkpoint, defaults to 1
+        :param learning_rate: Learning rate for the model, defaults to 4.5e-6
+        :param caption_key: Key for the caption in the batch, defaults to "caption"
+        :param embedding_provider: Embedding provider for the model, defaults to None
+        """    
         super().__init__()
         self.image_key = image_key
+        # Create the encoder and decoder if they are not provided
         self.encoder = encoder if encoder is not None else Encoder(z_channels=z_channels, **DEFAULT_ENCODER_ARGS)
         self.decoder = decoder if decoder is not None else Decoder(z_channels=z_channels, **DEFAULT_DECODER_ARGS)
         self.transformable_data_module = transformable_data_module
+        # Create the loss if it is not provided
         self.loss = loss if loss is not None else VQLPIPSWithDiscriminator(disc_start=10000)
         self.learning_rate = learning_rate
+        # Create the vector quantizer
         self.quantize = VectorQuantizer(
             n_codebook_embeddings, 
             codebook_embedding_size, 
@@ -87,12 +114,27 @@ class VQModel(pl.LightningModule):
         self.save_hyperparameters(ignore=['loss', 'decoder', 'encoder', 'embedding_provider'])
 
     def encode(self, x, emb=None):
+        """
+        Encodes the input and quantizes it.
+
+        :param x: Input to encode.
+        :param emb: Embedding, defaults to None
+        :return: Tuple of the encoded input, the embedding loss and the embedding info.
+        """        
         h = self.encoder(x, emb=emb)
         h = self.quant_conv(h)
         quant, emb_loss, info = self.quantize(h)
         return quant, emb_loss, info
 
     def decode(self, quant, emb=None, clamp=False):
+        """
+        Decodes the input.
+
+        :param quant: Input to decode.
+        :param emb: Embedding, defaults to None
+        :param clamp: Whether to clamp the output to [-1, 1], defaults to False
+        :return: Decoded input.
+        """        
         quant = self.post_quant_conv(quant)
         dec = self.decoder(quant, emb=emb)
         dec = dec.clamp(-1, 1) if clamp else dec
@@ -104,11 +146,26 @@ class VQModel(pl.LightningModule):
         return dec
 
     def forward(self, x, emb=None, clamp=False):
+        """
+        Forward pass of the model.
+
+        :param x: Input to encode and decode.
+        :param emb: Embedding, defaults to None
+        :param clamp: Whether to clamp the output to [-1, 1], defaults to False
+        :return: Tuple of the decoded input and the embedding loss.
+        """        
         quant, diff, _ = self.encode(x, emb=emb)
         dec = self.decode(quant, emb=emb, clamp=clamp)
         return dec, diff
 
     def get_input(self, batch, k):
+        """
+        Gets the input from the batch given the image key.
+
+        :param batch: Batch of data.
+        :param k: Key to get the input from.
+        :return: Tuple of the input, the captions and the embeddings.
+        """        
         images = batch[k]
         x = self.transformable_data_module.transform_batch(images)
         captions = None if self.caption_key is None else batch[self.caption_key]
@@ -116,13 +173,20 @@ class VQModel(pl.LightningModule):
         return x.float(), captions, embs
 
     def training_step(self, batch, batch_idx):
+        """
+        A training step for the model.
+
+        :param batch: Batch of data.
+        :param batch_idx: Batch index.
+        :return: Dictionary of loss values to log.
+        """        
         batch_size = len(batch[self.image_key])
         x, _, embs = self.get_input(batch, self.image_key)
         x = x.to(self.device)
         xrec, qloss = self(x, embs)
         opt_ae, opt_disc = self.optimizers() # pylint: disable=E0633
 
-        # autoencode
+        # Autoencoder and loss with manual backward
         aeloss, log_dict_ae = self.loss(qloss, x, xrec, 0, self.global_step,
                                         last_layer=self.get_last_layer(), split="train")
 
@@ -131,24 +195,32 @@ class VQModel(pl.LightningModule):
         self.log_dict(log_dict_ae, prog_bar=False, logger=True, on_step=True, on_epoch=True, batch_size=batch_size)
         opt_ae.zero_grad()
         self.manual_backward(aeloss)
-        #self.clip_gradients(opt_ae, gradient_clip_val=0.8, gradient_clip_algorithm="norm")
+
         opt_ae.step()
 
-        # discriminator
+        # Discriminator and loss with manual backward
         discloss, log_dict_disc = self.loss(qloss, x, xrec, 1, self.global_step,
                                         last_layer=self.get_last_layer(), split="train")
         self.log("train/discloss", discloss, prog_bar=True, logger=True, on_step=True, on_epoch=True, batch_size=batch_size)
         self.log_dict(log_dict_disc, prog_bar=False, logger=True, on_step=True, on_epoch=True, batch_size=batch_size)
         opt_disc.zero_grad()
         self.manual_backward(discloss)
-        #self.clip_gradients(opt_disc, gradient_clip_val=0.8, gradient_clip_algorithm="norm")
+
         opt_disc.step()
 
         return {"loss": aeloss, "disc_loss": discloss}
 
 
     def validation_step(self, batch, batch_idx):
+        """
+        A validation step for the model.
+
+        :param batch: Batch of data.
+        :param batch_idx: Batch index.
+        :return: Dictionary of loss values to log.
+        """        
         batch_size = len(batch[self.image_key])
+        # Get input
         x, captions, embs = self.get_input(batch, self.image_key)
         x = x.to(self.device)
         xrec, qloss = self(x, embs)
@@ -175,6 +247,10 @@ class VQModel(pl.LightningModule):
 
 
     def on_validation_epoch_end(self):
+        """
+        Saves the model checkpoint if the validation loss is lower than the previous checkpoint and
+        if checkpoint_every_val_epochs is reached. Also saves the latest checkpoint but overwrites the previous one.
+        """        
         outs = self.validation_step_outputs
         
         values = [outs[i]["rec_loss"] for i in range(len(outs)) if "rec_loss" in outs[i]]
@@ -200,6 +276,14 @@ class VQModel(pl.LightningModule):
         self.validation_step_outputs.clear() 
 
     def save_reconstructions(self, reconstructions, batch_idx, captions=None, note=None):
+        """
+        Saves the reconstructions to the disk.
+
+        :param reconstructions: Reconstructed images.
+        :param batch_idx: Batch index.
+        :param captions: Captions for the images, defaults to None
+        :param note: Note to add to the folder name, defaults to None
+        """        
         epoch = self.current_epoch
         note = f"_{note}" if note is not None else ""
         path_folder = f"{self.reconstructions_out_base_path}/{str(epoch)}_{str(batch_idx)}{note}/"
@@ -223,6 +307,11 @@ class VQModel(pl.LightningModule):
 
 
     def configure_optimizers(self):
+        """
+        Configures the optimizers for the model.
+
+        :return: Tuple of optimizers.
+        """        
         lr = self.learning_rate
         opt_ae = torch.optim.Adam(list(self.encoder.parameters())+
                                   list(self.decoder.parameters())+
@@ -236,4 +325,9 @@ class VQModel(pl.LightningModule):
         return (opt_ae, opt_disc)
 
     def get_last_layer(self):
+        """
+        Gets the last layer weights of the model.
+
+        :return: Weights of the last layer.
+        """        
         return self.decoder.conv_out.weight
