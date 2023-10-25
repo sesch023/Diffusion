@@ -383,14 +383,18 @@ class DiffusionTools():
 
                     mean_coef_1 = equalize_shape_of_first(self._posterior_mean_coef_1[ts], x_t)
                     mean_coef_2 = equalize_shape_of_first(self._posterior_mean_coef_2[ts], x_t)
+                    # Value of beta_t~ for the given timestep.
                     posterior_log_variance = equalize_shape_of_first(self._posterior_log_variance_clipped[ts], x_t)
 
+                    # Is the variance learned without a scale?
                     if self._variance_mode == VarianceMode.LEARNED:
+                        # f the variance is learned without a scale, the log variance is the output of the U-Net.
                         model_log_variance = model_var
                         model_var = torch.exp(model_log_variance)
                     else:
+                        # If the variance is learned with a scale, the output of the U-Net is a value between -1 and 1
+                        # normalized to 0 and 1. The result is used for a linear interpolation between beta_t and beta_t~.
                         log_schedule = equalize_shape_of_first(torch.log(self._schedule)[ts], x_t)
-                        
 
                         if clamp_var:
                             model_var = torch.clamp(model_var, -2.0, 2.0)
@@ -404,11 +408,13 @@ class DiffusionTools():
                     pred_x_start = recip_alphas_cum * x_t - recipm1_alphas_cum * predicted
                     if self._clamp_x_start_in_sample:
                         pred_x_start = pred_x_start.clamp(-1, 1)
+                    # Calculate the mean for the given timestep as described in https://arxiv.org/pdf/2102.09672.pdf in Formula 11.
                     model_mean = mean_coef_1 * pred_x_start + mean_coef_2 * x_t
                     x_var = torch.exp(0.5 * model_log_variance) * noise
                 else:
                     # No variance is learned. 
-                    # This is described in the original DDPM paper https://arxiv.org/pdf/2006.11239.pdf in Formula 11.
+                    # This is described in the original DDPM paper https://arxiv.org/pdf/2006.11239.pdf 
+                    # in Formula 11 and Algorithm 2.
                     x_var = torch.sqrt(noise_schedule) * noise                                            
                     model_mean = (1 / torch.sqrt(alphas)) * (x_t - (noise_schedule / (torch.sqrt(1 - alphas_cum))) * pred)
                     
