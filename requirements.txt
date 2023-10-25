@@ -1,4 +1,4 @@
-torch==2.0.0+cu117
+torch==2.0.0
 WebvidReader @ git+https://github.com/sesch023/WebvidReader.git
 make_a_video_pytorch==0.3.1
 torchinfo==1.8.0
@@ -22,4 +22,5 @@ transformers @ git+https://github.com/huggingface/transformers@v4.32.1
 lpips==0.1.4
 onnx==1.14.1
 img2dataset==1.42.0
+einops==0.7.0
 pytorch-lightning[extra]==2.1.0
