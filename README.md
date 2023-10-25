@@ -50,6 +50,24 @@ In diesem Abschnitt werden kurz die Modelle der Train-Dateien beschrieben. Dabei
 - SpatioTemporalDiffusionTrain: Trainiert den Spatiotemporal Decoder des Make-A-Video Systems. Abhängig der Konstante "skip_spatio" trainiert es erst mit dem CC3M und CC12M sowie validiert mit dem MS COCO oder es trainiert direkt mit dem WebVid10M. Ist "skip_spatio" false, so trainiert es zunächst bildlich für die im Trainer angegebene Zahl an Epochen. Dieses Modell wurde in der Masterarbeit beschrieben.
     - Nötige separate Modelle: -
     - Nötige Datensätze: CC3M (Webdataset), CC12M (Webdataset), MS COCO (Webdataset), WebVid10M
+- ClipTranslatorTrain: Trainiert einen CLIP-Translator mit dem CC3M und CC12M. Es validiert mit dem MS COCO. Dieses Modell wurde in der Masterarbeit beschrieben.
+    - Nötige separate Modelle: -
+    - Nötige Datensätze: CC3M (Webdataset), CC12M (Webdataset), MS COCO (Webdataset)
+- CosLatentDiffusionTrain: Trainiert ein latentes Diffusionsmodell mit dem vorher beschriebenen VQGAN. Es trainiert mit dem CC3M sowie CC12M und validiert mit dem MS COCO. Diese Modell nutzt abweichend zum anderen latenten Diffusionsmodell eine Cosine-Schedule.
+    - Nötige separate Modelle: VQGAN-Modell
+    - Nötige Datensätze: CC3M (Webdataset), CC12M (Webdataset), MS COCO (Webdataset)
+- Upscaler768Train: Trainiert ein Embedding-konditionales Upscaler-Diffusionsmodell mit dem CC3M, CC12M und einer linearen Schedule. Es validiert mit dem MS COCO. Dieses Modell skaliert von 192 auf 768 statt von 64 auf 256 Pixel.
+    - Nötige separate Modelle: -
+    - Nötige Datensätze: CC3M (Webdataset), CC12M (Webdataset), MS COCO (Webdataset)
+- CosDiffusionRandEmbTrain: Trainiert ein konditionales Diffusionsmodell mit dem CC3M, CC12M und einer Cosine-Schedule. Es validiert mit dem MS COCO. Diese Modell nutzt im Training zufällig ein Text, Img oder Translator-Embedding.
+    - Nötige separate Modelle: Upscaler-Modell, CLIP-Translator-Modell
+    - Nötige Datensätze: CC3M (Webdataset), CC12M (Webdataset), MS COCO (Webdataset)
+- VQGANTrain (Legacy): Trainiert ein VQGAN ohne unterstützenden Embeddings. Es trainiert mit dem CC3M sowie CC12M und validiert mit dem MS COCO. 
+    - Nötige separate Modelle: -
+    - Nötige Datensätze: CC3M (Webdataset), CC12M (Webdataset), MS COCO (Webdataset)
+- LatentDiffusion100Train (Legacy): Trainiert ein latentes Diffusionsmodell mit dem vorher beschriebenen VQGAN. Es trainiert mit dem CC3M sowie CC12M und validiert mit dem MS COCO. Dieses Modell nutzt im Gegensatz zum anderen nur 100 Diffusionsschritte.
+    - Nötige separate Modelle: VQGAN-Modell
+    - Nötige Datensätze: CC3M (Webdataset), CC12M (Webdataset), MS COCO (Webdataset)
 
 ## Downloads-Modelle:
 

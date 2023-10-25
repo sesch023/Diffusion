@@ -39,7 +39,7 @@ captions_preprocess = lambda captions: [cap[:77] for cap in captions]
 
 clip_tools = ClipTools(device=device)
 translator_model_path = "/home/sesch023/DiffusionModels/DiffusionModels/clip_translator/model.ckpt"
-sample_images_out_base_path="samples_cos_diffusion_final/"
+sample_images_out_base_path="samples_cos_diffusion_rand_emb/"
 old_checkpoint = glob.glob(f"{sample_images_out_base_path}/latest.ckpt")
 old_checkpoint = old_checkpoint if len(old_checkpoint) > 0 else glob.glob(f"{sample_images_out_base_path}/*.ckpt")
 resume_from_checkpoint = None if not resume_from_checkpoint else old_checkpoint[0] if len(old_checkpoint) > 0 else None

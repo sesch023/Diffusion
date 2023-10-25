@@ -35,8 +35,6 @@ data = WebdatasetDataModule(
         
 captions_preprocess = lambda captions: [cap[:77] for cap in captions]
 
-# Definition nicht nach VQGAN Paper sondern https://github.com/CompVis/stable-diffusion/
-
 z_channels = 3
 shared_args = dict(
     z_channels=z_channels,
