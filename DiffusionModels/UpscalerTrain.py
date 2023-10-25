@@ -12,40 +12,56 @@ from DiffusionModules.DiffusionTrainer import UpscalerDiffusionTrainer
 from DiffusionModules.DiffusionModels import UpscalerUNet
 from DiffusionModules.DataModules import WebdatasetDataModule
 from DiffusionModules.EmbeddingTools import ClipTools, ClipEmbeddingProvider
+from Configs import ModelLoadConfig, DatasetLoadConfig, RunConfig
 
+"""
+This is the main file for training a upscaling diffusion model with a linear scheduler.
+It upscales images from 64x64 to 256x256. This is the final version of the code used for the experiments in the thesis.
+
+The results of this model were described in the chapter:
+7.3. Upscaling mittels Diffusion
+"""
+gpus=[0]
+device = f"cuda:{str(gpus[0])}" if torch.cuda.is_available() else "cpu"
+batch_size = 2
+captions_preprocess = lambda captions: [cap[:77] for cap in captions]
+sample_images_out_base_path="samples_upscale/"
+# Should the training resume from the latest checkpoint in the sample_images_out_base_path?
+resume_from_checkpoint = True
+
+# Initialize the data module
+data = WebdatasetDataModule(
+    DatasetLoadConfig.cc_3m_12m_paths,
+    DatasetLoadConfig.coco_val_path,
+    DatasetLoadConfig.coco_test_path,
+    batch_size=batch_size,
+    img_in_target_size=256
+)  
+
+if not os.path.exists(sample_images_out_base_path):
+    os.makedirs(sample_images_out_base_path)
+
+# Initialize the context
 torch.set_float32_matmul_precision('high')
 os.environ["TOKENIZERS_PARALLELISM"] = "true"
 os.environ["WDS_VERBOSE_CACHE"] = "1"
 
-resume_from_checkpoint = True
-
-gpus=[1]
-device = f"cuda:{str(gpus[0])}" if torch.cuda.is_available() else "cpu"
-unet = UpscalerUNet(device=device).to(device)
+# Initialize the logger
 wandb.init()
 wandb_logger = WandbLogger()
-summary(unet, [(1, 6, 256, 256), (1, 256), (1, 512)], verbose=1)
-batch_size = 2
 wandb.save("*.py*")
 
-# url_train = "/home/shared-data/LAION-400M/laion400m-data/{00010..99999}.tar"
-# url_test = "/home/shared-data/LAION-400M/laion400m-data/{00000..00009}.tar"
+# Initialize the UNet model
+unet = UpscalerUNet(device=device).to(device)
+summary(unet, [(1, 6, 256, 256), (1, 256), (1, 512)], verbose=1)
 
-data = WebdatasetDataModule(
-    ["/home/archive/CC12M/cc12m/{00000..01242}.tar", "/home/archive/CC3M/cc3m/{00000..00331}.tar"],
-    ["/home/archive/CocoWebdatasetFullScale/mscoco/{00000..00040}.tar"],
-    batch_size=batch_size,
-    img_in_target_size=256
-)  
-        
-captions_preprocess = lambda captions: [cap[:77] for cap in captions]
-
-clip_tools = ClipTools(device=device)
-translator_model_path = "clip_translator/model.ckpt"
-sample_images_out_base_path="samples_upscale/"
+# Find the latest checkpoint in the sample_images_out_base_path
 old_checkpoint = glob.glob(f"{sample_images_out_base_path}/latest.ckpt")
 old_checkpoint = old_checkpoint if len(old_checkpoint) > 0 else glob.glob(f"{sample_images_out_base_path}/*.ckpt")
 resume_from_checkpoint = None if not resume_from_checkpoint else old_checkpoint[0] if len(old_checkpoint) > 0 else None
+
+# Initialize the UpscalerDiffusionTrainer
+clip_tools = ClipTools(device=device)
 model = UpscalerDiffusionTrainer(
     unet, 
     start_size=64,
@@ -58,6 +74,7 @@ model = UpscalerDiffusionTrainer(
     embedding_provider=ClipEmbeddingProvider(clip_tools=clip_tools)
 )
 
+# Initialize the trainer
 lr_monitor = cb.LearningRateMonitor(logging_interval='epoch')
 trainer = pl.Trainer(
     limit_train_batches=200, 
@@ -67,12 +84,13 @@ trainer = pl.Trainer(
     max_epochs=30000, 
     logger=wandb_logger, 
     default_root_dir="model/", 
-    #gradient_clip_val=1.0, 
     gradient_clip_val=0.008, 
     gradient_clip_algorithm="norm", 
     callbacks=[lr_monitor],
     devices=gpus
 )
 
+# Fit the model
 trainer.fit(model, data, ckpt_path=resume_from_checkpoint)
+# Save the model
 torch.save(model.state_dict(), f"{sample_images_out_base_path}/model.ckpt")

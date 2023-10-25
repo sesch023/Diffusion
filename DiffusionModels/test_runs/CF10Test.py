@@ -7,7 +7,7 @@ from DiffusionModules.DataModules import CIFAR10DataModule
 from DiffusionModules.ModelLoading import load_cf10
 from DiffusionModules.EmbeddingTools import ClipTools, ClipTextEmbeddingProvider
 
-gpus=[ß]
+gpus=[0]
 device = f"cuda:{str(gpus[0])}" if torch.cuda.is_available() else "cpu"
 
 report_path = "CF10_report_2/"

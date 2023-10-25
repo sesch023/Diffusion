@@ -82,7 +82,7 @@ Hinweis: Vom Download des Upscaler-Modells kann theoretisch abgesehen werden, we
 Anmerkungen für den Download mit img)dataset: Der Standardbefehl für den Download fügt eine weiße Border zu Bildern einer nicht quadratischen Form hinzu. Dies ist für die Diffusion ungünstig. Die implementierten DataModules können mit nicht quadratischen Daten umgehen. Ein Download sollte daher entweder in originaler Auflösung oder mit der Option "keep_ratio" des Parameters "resize_mode" erfolgen. Der Download aller img2dataset Datensätze sollte mindestens mit der Größe 256 erfolgen!
 
 - [CIFAR-10-64](https://www.kaggle.com/datasets/joaopauloschuler/cifar10-64x64-resized-via-cai-super-resolution)
-- [MS COCO](https://github.com/rom1504/img2dataset/blob/main/dataset_examples/mscoco.md)
+- [MS COCO (Webdataset)](https://github.com/rom1504/img2dataset/blob/main/dataset_examples/mscoco.md)
 - [CC3M (Webdataset)](https://github.com/rom1504/img2dataset/blob/main/dataset_examples/cc3m.md)
 - [CC12M (Webdataset)](https://github.com/rom1504/img2dataset/blob/main/dataset_examples/cc12m.md)
 - [WebVid-10M](https://github.com/m-bain/webvid)

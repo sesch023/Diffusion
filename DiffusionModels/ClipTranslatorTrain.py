@@ -12,39 +12,62 @@ import wandb
 from DiffusionModules.ClipTranslatorModules import ClipTranslatorTrainer, ClipTranslator
 from DiffusionModules.DataModules import WebdatasetDataModule
 from DiffusionModules.EmbeddingTools import ClipTools
+from Configs import ModelLoadConfig, DatasetLoadConfig, RunConfig
 
-wandb.init()
+"""
+This is the train file for training a ClipTranslator model.
+This is the final version of the code used for the experiments in the thesis.
+
+The results of this model were described in the chapter:
+6.2.3. Das EmbeddingTools-Modul und der ClipTranslator
+"""
+gpus=[0]
+device = torch.device(f"cuda:{gpus[0]}" if torch.cuda.is_available() else "cpu")
+batch_size = 64
+model_out_base = "clip_translator_final"
+model_out= f"{model_out_base}/latest.ckpt"
+model_out_final = f"{model_out_base}/final.ckpt"
+# Should the training resume from the latest checkpoint in the sample_images_out_base_path?
+resume_from_checkpoint = True
+
+# Initialize the data module
+data = WebdatasetDataModule(
+    DatasetLoadConfig.cc_3m_12m_paths,
+    DatasetLoadConfig.coco_val_path,
+    DatasetLoadConfig.coco_test_path,
+    batch_size=batch_size
+)  
+
+if not os.path.exists(model_out_base):
+    os.makedirs(model_out_base)
+
+# Initialize the context
 torch.set_float32_matmul_precision('high')
 os.environ["TOKENIZERS_PARALLELISM"] = "true"
 os.environ["WDS_VERBOSE_CACHE"] = "1"
 
-resume_from_checkpoint = True
-gpus=[2]
-device = torch.device(f"cuda:{gpus[0]}" if torch.cuda.is_available() else "cpu")
-clip = ClipTools(device=device)
-translator = ClipTranslator(in_out_dim=clip.get_clip_emb_size())
+# Initialize the logger
+wandb.init()
 wandb_logger = WandbLogger()
-batch_size = 64
 wandb.save("*.py*")
 
-data = WebdatasetDataModule(
-    ["/home/archive/CC12M_HIGH_RES/cc12m/{00000..01100}.tar", "/home/archive/CC3M_HIGH_RES/cc3m/{00000..00300}.tar"],
-    ["/home/archive/CC12M_HIGH_RES/cc12m/{01101..01242}.tar", "/home/archive/CC3M_HIGH_RES/cc3m/{00301..00331}.tar"],
-    ["/home/archive/CocoWebdatasetFullScale/mscoco/{00000..00059}.tar"],
-    batch_size=batch_size
-)  
+# Initialize the ClipTranslator model
+clip = ClipTools(device=device)
+translator = ClipTranslator(in_out_dim=clip.get_clip_emb_size())
 
-model_out="clip_translator_final/model.ckpt"
-model_out_final = "clip_translator_final/final.ckpt"
+# Find the latest checkpoint in the sample_images_out_base_path
 old_checkpoint = glob.glob(model_out)
 resume_from_checkpoint = None if not resume_from_checkpoint else old_checkpoint[0] if len(old_checkpoint) > 0 else None
+
+# Create the ClipTranslatorTrainer instance
 model = ClipTranslatorTrainer(translator, device=device, model_out=model_out)
 
+# About every element in the train dataset
 train_batches = (int((11e6 + 3e6) / batch_size) + 1) 
+# About every element in the validation dataset
 val_batches = int(320000 / batch_size) + 1
 
-print(train_batches)
-
+# Initialize the trainer
 lr_monitor = cb.LearningRateMonitor(logging_interval='step')
 trainer = pl.Trainer(
     limit_train_batches=int(train_batches / 10), 
@@ -58,8 +81,10 @@ trainer = pl.Trainer(
     devices=gpus,
 )
 
+# Fit the model
 trainer.fit(model, data, ckpt_path=resume_from_checkpoint)
+# Test the model
 trainer.test(model, dataloaders=data.test_dataloader())
+# Save the model
 torch.save(model.state_dict(), model_out_final)
-
 

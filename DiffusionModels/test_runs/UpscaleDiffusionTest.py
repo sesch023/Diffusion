@@ -103,8 +103,8 @@ low_res_embs = True
 
 for images, captions in dl:
     sample_from_diffusion_trainer(model, captions, images, device, i, text_emb_provider, low_res_embs)
-    print(f"Batch {i} of {limit_batches - 1} done.")
     i += 1
+    print(f"Batch {i} of {limit_batches - 1} done.")
     if i >= limit_batches:
         break
 

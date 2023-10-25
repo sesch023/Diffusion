@@ -62,13 +62,12 @@ def get_fid(fid, samples, real):
     :param real: Real images to calculate the FID score to.
     :return: FID score of the samples compared to the real images.
     """    
-    print(fid)
     fid.reset()
     fid.update((((samples + 1)/2)*255).byte(), real=False)
     fid.update((((real + 1)/2)*255).byte(), real=True)
-    fid = fid.compute()
+    fid_val = fid.compute()
     fid.reset()
-    return fid
+    return fid_val
 
 class DiffusionTrainer(pl.LightningModule):
     def __init__(

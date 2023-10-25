@@ -14,32 +14,47 @@ from DiffusionModules.DataModules import WebdatasetDataModule, CollateType
 from DiffusionModules.EmbeddingTools import ClipTools
 from DiffusionModules.DiffusionTrainer import ClipEmbeddingProvider
 
-resume_from_checkpoint = True
-torch.set_float32_matmul_precision('high')
-os.environ["TOKENIZERS_PARALLELISM"] = "true"
-os.environ["WDS_VERBOSE_CACHE"] = "1"
+"""
+This is the main file for training a LatentVQGAN Model with Embeddings.
+This is the final version of the code used for the experiments in the thesis.
 
-gpus=[1]
+The results of this model were described in the chapter:
+7.4. VQGANs und latente Diffusion
+"""
+gpus=[0]
 device = f"cuda:{str(gpus[0])}" if torch.cuda.is_available() else "cpu"
-wandb.init()
-wandb_logger = WandbLogger()
 batch_size = 4
 num_workers = 4
-wandb.save("*.py*")
+captions_preprocess = lambda captions: [cap[:77] for cap in captions]
+reconstructions_out_base_path = "emb_reconstructions/"
+# Should the training resume from the latest checkpoint in the sample_images_out_base_path?
+resume_from_checkpoint = True
 
+# Initialize the data module
 data = WebdatasetDataModule(
-    ["/home/archive/CC12M/cc12m/{00000..01242}.tar", "/home/archive/CC3M/cc3m/{00000..00331}.tar"],
-    ["/home/archive/CocoWebdatasetFullScale/mscoco/{00000..00040}.tar"],
+    DatasetLoadConfig.cc_3m_12m_paths,
+    DatasetLoadConfig.coco_val_path,
+    DatasetLoadConfig.coco_test_path,
     batch_size=batch_size,
     collate_type=CollateType.COLLATE_NONE_DICT,
     num_workers=num_workers,
     img_in_target_size=256
 )  
-        
-captions_preprocess = lambda captions: [cap[:77] for cap in captions]
 
-# Definition nicht nach VQGAN Paper sondern https://github.com/CompVis/stable-diffusion/
+if not os.path.exists(reconstructions_out_base_path):
+    os.makedirs(reconstructions_out_base_path)
 
+# Initialize the context
+torch.set_float32_matmul_precision('high')
+os.environ["TOKENIZERS_PARALLELISM"] = "true"
+os.environ["WDS_VERBOSE_CACHE"] = "1"
+
+# Initialize the logger
+wandb.init()
+wandb_logger = WandbLogger()
+wandb.save("*.py*")
+
+# Shared arguments for the encoder and decoder
 z_channels = 3
 shared_args = dict(
     z_channels=z_channels,
@@ -53,33 +68,40 @@ shared_args = dict(
     out_emb_size=1024
 )
 
+# Initializes the encoder
 encoder = Encoder(
     in_channels=3,
     double_z=False,
     **shared_args
 ).to(device)
 
+# Print the model summary of the encoder
 print("Encoder")
 summary(encoder, [(1, encoder.in_channels, shared_args["resolution"], shared_args["resolution"]), (1, 512)], verbose=1)
 
+# Initializes the decoder
 decoder = Decoder(
     out_channels=3,
     **shared_args
 ).to(device)
 
+# Print the model summary of the decoder
 decoder_in_res = shared_args["resolution"] // (2 ** (len(shared_args["ch_mult"])-1))
 print("Decoder")
 summary(decoder, [(1, z_channels, decoder_in_res, decoder_in_res), (1, 512)], verbose=1)
 
+# Initializes the discriminator
 discriminator = NLayerDiscriminator(
     input_nc=decoder.out_channels,
     n_layers=3,
     ndf=64
 ).to(device)
 
+# Print the model summary of the discriminator
 print("Discriminator")
 summary(discriminator, (1, decoder.out_channels, shared_args["resolution"], shared_args["resolution"]), verbose=1)
 
+# Initializes the loss
 loss = VQLPIPSWithDiscriminator(
     discriminator=discriminator,
     disc_start=0,
@@ -88,12 +110,15 @@ loss = VQLPIPSWithDiscriminator(
     disc_conditional=False
 ).to(device)
 
-reconstructions_out_base_path = "emb_reconstructions/"
+# Find the latest checkpoint in the sample_images_out_base_path and resume from it if resume_from_checkpoint is True
 old_checkpoint = glob.glob(f"{reconstructions_out_base_path}/latest.ckpt")
 old_checkpoint = old_checkpoint if len(old_checkpoint) > 0 else glob.glob(f"{reconstructions_out_base_path}/*.ckpt")
 resume_from_checkpoint = None if not resume_from_checkpoint else old_checkpoint[0] if len(old_checkpoint) > 0 else None
+
 clip_tools = ClipTools(device=device)
 emb_prov = ClipEmbeddingProvider(clip_tools=clip_tools)
+
+# Create the VQModel instance
 model = VQModel(
     encoder=encoder,
     decoder=decoder,
@@ -113,6 +138,7 @@ model = VQModel(
     embedding_provider=emb_prov
 ).to(device)
 
+# Create the trainer
 trainer = pl.Trainer(
     limit_train_batches=200, 
     check_val_every_n_epoch=100, 
@@ -123,5 +149,7 @@ trainer = pl.Trainer(
     devices=gpus
 )
 
+# Fit the model
 trainer.fit(model, data, ckpt_path=resume_from_checkpoint)
+# Save the model
 torch.save(model.state_dict(), f"{reconstructions_out_base_path}/model.ckpt")

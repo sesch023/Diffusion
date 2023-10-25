@@ -12,36 +12,59 @@ from DiffusionModules.DiffusionTrainer import DiffusionTrainer
 from DiffusionModules.DiffusionModels import BasicUNet
 from DiffusionModules.DataModules import WebdatasetDataModule
 from DiffusionModules.EmbeddingTools import ClipTools, ClipEmbeddingProvider
+from Configs import ModelLoadConfig, DatasetLoadConfig, RunConfig
 
+"""
+This is the main file for training a Diffusion Model with cosine scheduler.
+This is the final version of the code used for the experiments in the thesis.
+
+The results of this model were described in the chapter:
+7.2. Diffusion mit Cosine-Schedule
+"""
+gpus=[0]
+device = f"cuda:{str(gpus[0])}" if torch.cuda.is_available() else "cpu"
+batch_size = 4
+captions_preprocess = lambda captions: [cap[:77] for cap in captions]
+translator_model_path = ModelLoadConfig.clip_translator_path
+sample_images_out_base_path= "samples_cos_diffusion/"
+# Should the training resume from the latest checkpoint in the sample_images_out_base_path?
+resume_from_checkpoint = True
+
+# Initialize the data module
+data = WebdatasetDataModule(
+    DatasetLoadConfig.cc_3m_12m_paths,
+    DatasetLoadConfig.coco_val_path,
+    DatasetLoadConfig.coco_test_path,
+    batch_size=batch_size,
+    num_workers=4
+)  
+
+if not os.path.exists(sample_images_out_base_path):
+    os.makedirs(sample_images_out_base_path)
+
+# Initialize the context
 torch.set_float32_matmul_precision('high')
 os.environ["TOKENIZERS_PARALLELISM"] = "true"
 os.environ["WDS_VERBOSE_CACHE"] = "1"
 
-resume_from_checkpoint = True
-gpus=[0]
-device = f"cuda:{str(gpus[0])}" if torch.cuda.is_available() else "cpu"
-unet = BasicUNet(device=device).to(device)
-summary(unet, [(1, 3, 64, 64), (1, 256), (1, 512)], verbose=1)
+# Initialize the logger
 wandb.init()
 wandb_logger = WandbLogger()
-batch_size = 4
 wandb.save("*.py*")
 
-data = WebdatasetDataModule(
-    ["/home/archive/CC12M/cc12m/{00000..01242}.tar", "/home/archive/CC3M/cc3m/{00000..00331}.tar"],
-    ["/home/archive/CocoWebdatasetFullScale/mscoco/{00000..00040}.tar"],
-    batch_size=batch_size,
-    num_workers=4
-)  
-        
-captions_preprocess = lambda captions: [cap[:77] for cap in captions]
+# Initialize the UNet model
+unet = BasicUNet(device=device).to(device)
+# Print the model summary
+summary(unet, [(1, 3, 64, 64), (1, 256), (1, 512)], verbose=1)
 
-clip_tools = ClipTools(device=device)
-translator_model_path = "/home/jovyan/DiffusionModels/DiffusionModels/clip_translator/model.ckpt"
-sample_images_out_base_path="samples_cos_diffusion/"
+# Find the latest checkpoint in the sample_images_out_base_path
 old_checkpoint = glob.glob(f"{sample_images_out_base_path}/latest.ckpt")
 old_checkpoint = old_checkpoint if len(old_checkpoint) > 0 else glob.glob(f"{sample_images_out_base_path}/*.ckpt")
 resume_from_checkpoint = None if not resume_from_checkpoint else old_checkpoint[0] if len(old_checkpoint) > 0 else None
+
+clip_tools = ClipTools(device=device)
+
+# Create the DiffusionTrainer instance
 model = DiffusionTrainer(
     unet, 
     transformable_data_module=data,
@@ -55,6 +78,7 @@ model = DiffusionTrainer(
     c_device=device
 )
 
+# Initialize the trainer
 lr_monitor = cb.LearningRateMonitor(logging_interval='epoch')
 trainer = pl.Trainer(
     limit_train_batches=200, 
@@ -64,12 +88,13 @@ trainer = pl.Trainer(
     max_epochs=20000, 
     logger=wandb_logger, 
     default_root_dir="model/", 
-    # gradient_clip_val=1.0, 
     gradient_clip_val=0.008, 
     gradient_clip_algorithm="norm", 
     callbacks=[lr_monitor],
     devices=gpus
 )
 
+# Fit the model
 trainer.fit(model, data, ckpt_path=resume_from_checkpoint)
+# Save the final model
 torch.save(model.state_dict(), f"{sample_images_out_base_path}/model.ckpt")

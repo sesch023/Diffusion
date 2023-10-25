@@ -80,9 +80,9 @@ def sample_from_diffusion_trainer(trainer, captions, images, device, batch_idx, 
     print(f"Mean Text CLIP score: {mean_clip}")
 
 dl = WebdatasetDataModule(
-    ["/home/archive/CC12M/cc12m/{00000..01242}.tar", "/home/archive/CC3M/cc3m/{00000..00331}.tar"],
-    ["/home/archive/CocoWebdatasetFullScale/mscoco/{00000..00040}.tar"],
-    ["/home/archive/CocoWebdatasetFullScale/mscoco/{00041..00059}.tar"],
+    DatasetLoadConfig.cc_3m_12m_paths,
+    DatasetLoadConfig.coco_val_path,
+    DatasetLoadConfig.coco_test_path,
     batch_size=batch_size,
     num_workers=4
 ).test_dataloader()
