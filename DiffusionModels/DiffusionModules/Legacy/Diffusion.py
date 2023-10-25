@@ -320,7 +320,6 @@ class ClipTools():
         return self._clip_model.encode_image(images.to(self._device)).float()
     
     def get_clip_emb_text(self, texts):
-        # TODO: Truncate hack is stupid for long sentences
         return self._clip_model.encode_text(clip.tokenize(texts, truncate = True).to(self._device)).float()
         
     
