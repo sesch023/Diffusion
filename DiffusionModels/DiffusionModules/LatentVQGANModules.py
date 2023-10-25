@@ -385,7 +385,6 @@ class NLayerDiscriminator(nn.Module):
 
 
 class ResidualEmbeddingConditionalDiscriminator(nn.Module):
-    # Inspired by our ResBlocks and https://github.com/CompVis/taming-transformers/blob/master/taming/modules/discriminator/model.py
     def __init__(
         self,
         in_channels,
@@ -397,11 +396,25 @@ class ResidualEmbeddingConditionalDiscriminator(nn.Module):
         # Only relevant if patch_based=False
         input_resolution=256
     ):
+        """
+        Residual embedding conditional discriminator for the VQGAN model.
+        This is a conditional discriminator that takes the embedding of the image as an additional input.
+        It was inspired by our resblock architecture. Since the NLayersDiscriminator lead to good results,
+        we did not use this discriminator.
+
+        :param in_channels: Number of input channels.
+        :param base_channels: Number of base channels, defaults to 64
+        :param number_down_layers: Number of down layers, defaults to 3
+        :param emb_size: Size of the embeddings, defaults to None
+        :param out_emb_size: Output size of the linear embedding layers, defaults to 1024
+        :param patch_based: Whether to output patch based values or a single value, defaults to True
+        :param input_resolution: Resolution of the input, defaults to 256
+        """        
         super().__init__()
         self.emb_size = emb_size
         self.in_channels = in_channels
         self.base_channels = base_channels
-        self.number_hidden_layers = number_hidden_layers
+        self.number_down_layers = number_down_layers
         self.patch_based = patch_based
         self.input_resolution = input_resolution
         self.out_emb_size = out_emb_size if out_emb_size is not None and emb_size is not None else emb_size
@@ -421,8 +434,8 @@ class ResidualEmbeddingConditionalDiscriminator(nn.Module):
         channel_mult = 1
         channel_mult_prev = 1
         curr_res = self.input_resolution
-        for i in range(self.number_hidden_layers):
-            ds_mode = ResBlockSampleMode.DOWNSAMPLE2X if i < self.number_hidden_layers-1 else ResBlockSampleMode.IDENTITY
+        for i in range(self.number_down_layers):
+            ds_mode = ResBlockSampleMode.DOWNSAMPLE2X if (i < self.number_down_layers-1 and curr_res >= 4) else ResBlockSampleMode.NO_DOWNSAMPLE
             channel_mult_prev = channel_mult
             channel_mult = min(2**(i+1), 8)
             blocks.append(
@@ -451,6 +464,13 @@ class ResidualEmbeddingConditionalDiscriminator(nn.Module):
 
 
     def forward(self, x, emb=None):
+        """
+        Forward pass of the discriminator.
+
+        :param x: Input tensor.
+        :param emb: Embedding tensor, defaults to None
+        :return: A value for each patch or a single value.
+        """        
         if self.emb_size is not None:
             emb = self.emb_seq(emb) if emb is not None else torch.zeros_like(emb)
         
