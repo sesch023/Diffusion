@@ -12,8 +12,11 @@ import urllib.request
 from typing import Any
 
 def open_url(url: str, num_attempts: int = 10, verbose: bool = True, return_filename: bool = False) -> Any:
-    # https://github.com/universome/fvd-comparison/blob/master/util.py
-    """Download the given URL and return a binary-mode file object to access the data."""
+    """
+    This was taken from: https://github.com/universome/fvd-comparison/blob/master/util.py
+
+    Download the given URL and return a binary-mode file object to access the data.
+    """
     assert num_attempts >= 1
 
     # Doesn't look like an URL scheme so interpret it as a local filename.
@@ -88,7 +91,16 @@ def open_url(url: str, num_attempts: int = 10, verbose: bool = True, return_file
 
 class ImageTransformer():
     def __init__(self, transform_image=None, reverse_transform_image=None, img_target_size=64):
+        """
+        Creates an ImageTransformer object for transforming images.
+
+        :param transform_image: Pipeline for transforming images, defaults to [ToTensor, Resize(target_size), CenterCrop(target_size), Lambda(lambda t: (t * 2) - 1)]
+        :param reverse_transform_image: Pipeline for reverse transforming images, 
+            defaults to [Lambda(lambda t: (t + 1) / 2), Lambda(lambda t: t.permute(1, 2, 0)), Lambda(lambda t: t * 255.), Lambda(lambda t: t.numpy().astype(np.uint8)), ToPILImage()]
+        :param img_target_size: Target size for images, defaults to 64
+        """        
         if transform_image is None:
+            # This can be used to transform a single image
             self.transform_image = transforms.Compose([
                 transforms.ToTensor(), # turn into torch Tensor of shape CHW, divide by 255
                 transforms.Resize(img_target_size),
@@ -99,6 +111,7 @@ class ImageTransformer():
             self.transform_image = transform_image
             
         if reverse_transform_image is None:
+            # This can be used to reverse transform a single image
             self.reverse_transform_image = transforms.Compose([
                 transforms.Lambda(lambda t: (t + 1) / 2),
                 transforms.Lambda(lambda t: t.permute(1, 2, 0)), # CHW to HWC
@@ -110,7 +123,19 @@ class ImageTransformer():
             self.reverse_transform_image = reverse_transform_image
             
     def transform_images(self, images):
+        """
+        Transforms a batch of images.
+
+        :param images: Batch of images.
+        :return: Transformed batch of images.
+        """        
         return torch.stack([self.transform_image(image) for image in images])
     
     def reverse_transform_images(self, tensors):
+        """
+        Reverse transforms a batch of images.
+
+        :param tensors: Batch of images.
+        :return: Reverse transformed batch of images.
+        """        
         return [self.reverse_transform_image(tensor) for tensor in tensors]
