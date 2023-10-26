@@ -8,6 +8,7 @@ from DiffusionModules.DataModules import CIFAR10DataModule
 from DiffusionModules.ModelLoading import load_cf10
 from DiffusionModules.EmbeddingTools import ClipTools, ClipTextEmbeddingProvider
 from DiffusionModules.Util import calculate_mean
+from Configs import ModelLoadConfig, DatasetLoadConfig, RunConfig
 
 """
 Tests for a cifar10 diffusion model.
@@ -18,9 +19,9 @@ The results of this model were described in the chapter:
 
 gpus=[0]
 device = f"cuda:{str(gpus[0])}" if torch.cuda.is_available() else "cpu"
-report_path = "CF10_report_2/"
+report_path = "CF10_report/"
 path = ModelLoadConfig.cf10_diffusion_path
-batch_size = 16
+batch_size = 4
 start_n = 0
 n = 1000
 

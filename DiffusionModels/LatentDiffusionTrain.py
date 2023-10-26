@@ -29,9 +29,9 @@ batch_size = 4
 num_workers = 4
 latent_shape = (3, 64, 64)
 captions_preprocess = lambda captions: [cap[:77] for cap in captions]
-sample_images_out_base_path="samples_laten_diffusion/"
+sample_images_out_base_path="samples_latent_diffusion/"
 # Should the training resume from the latest checkpoint in the sample_images_out_base_path?
-resume_from_checkpoint = True
+resume_from_checkpoint = False
 
 # Initialize the data module
 data = WebdatasetDataModule(
@@ -106,7 +106,7 @@ model = LatentDiffusionTrainer(
 lr_monitor = cb.LearningRateMonitor(logging_interval='epoch')
 # Create the trainer
 trainer = pl.Trainer(
-    limit_train_batches=100, 
+    limit_train_batches=200, 
     check_val_every_n_epoch=200, 
     limit_val_batches=5, 
     num_sanity_val_steps=0, 

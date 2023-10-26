@@ -8,7 +8,7 @@ import wandb
 import glob
 
 from DiffusionModules.Diffusion import DiffusionTools, CosineScheduler
-from DiffusionModules.DiffusionTrainer import DiffusionTrainer
+from DiffusionModules.DiffusionTrainer import DiffusionTrainer, UpscalerMode
 from DiffusionModules.DiffusionModels import BasicUNet
 from DiffusionModules.DataModules import WebdatasetDataModule
 from DiffusionModules.EmbeddingTools import ClipTools, ClipRandomImageTextTranslatorEmbeddingProvider, ClipTranslatorEmbeddingProvider
@@ -19,7 +19,6 @@ This is the main file for training a Diffusion Model with random embedding types
 This was tested to see if the problems with translator and text embeddings could be solved that way.
 The model was not reported in the thesis.
 """
-
 batch_size = 4
 gpus=[0]
 device = f"cuda:{str(gpus[0])}" if torch.cuda.is_available() else "cpu"
@@ -27,7 +26,7 @@ captions_preprocess = lambda captions: [cap[:77] for cap in captions]
 translator_model_path = ModelLoadConfig.translator_model_path
 sample_images_out_base_path= "samples_cos_diffusion_rand_emb/"
 # Should the training resume from the latest checkpoint in the sample_images_out_base_path?
-resume_from_checkpoint = True
+resume_from_checkpoint = False
 
 # Initialize the data module
 data = WebdatasetDataModule(
@@ -74,7 +73,7 @@ model = DiffusionTrainer(
     checkpoint_every_val_epochs=1,
     embedding_provider=embedding_provider,
     alt_validation_emb_provider=ClipTranslatorEmbeddingProvider(clip_tools=clip_tools, translator_model_path=translator_model_path),
-    sample_upscaler_mode="UDM",
+    sample_upscaler_mode=UpscalerMode.NONE,
     c_device=device
 )
 
@@ -82,8 +81,8 @@ model = DiffusionTrainer(
 lr_monitor = cb.LearningRateMonitor(logging_interval='epoch')
 trainer = pl.Trainer(
     limit_train_batches=200, 
-    check_val_every_n_epoch=400, 
-    limit_val_batches=2, 
+    check_val_every_n_epoch=200, 
+    limit_val_batches=5, 
     num_sanity_val_steps=0, 
     max_epochs=20000, 
     logger=wandb_logger, 

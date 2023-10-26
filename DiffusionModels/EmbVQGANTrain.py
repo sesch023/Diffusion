@@ -13,6 +13,7 @@ from DiffusionModules.VQGANLosses import VQLPIPSWithDiscriminator
 from DiffusionModules.DataModules import WebdatasetDataModule, CollateType
 from DiffusionModules.EmbeddingTools import ClipTools
 from DiffusionModules.DiffusionTrainer import ClipEmbeddingProvider
+from Configs import ModelLoadConfig, DatasetLoadConfig, RunConfig
 
 """
 This is the main file for training a LatentVQGAN Model with Embeddings.
@@ -36,9 +37,11 @@ data = WebdatasetDataModule(
     DatasetLoadConfig.coco_val_path,
     DatasetLoadConfig.coco_test_path,
     batch_size=batch_size,
-    collate_type=CollateType.COLLATE_NONE_DICT,
+    collate_type=CollateType.COLLATE_NONE_TUPLE,
     num_workers=num_workers,
-    img_in_target_size=256
+    img_in_target_size=256,
+    preprocess=None,
+    legacy=False
 )  
 
 if not os.path.exists(reconstructions_out_base_path):
@@ -127,21 +130,21 @@ model = VQModel(
     n_codebook_embeddings=8192,
     codebook_embedding_size=z_channels,
     z_channels=z_channels,
-    image_key="image",
+    image_key=0,
     monitor="val/rec_loss",
     remap=None,
     sane_index_shape=False,  # tell vector quantizer to return indices as bhw
     reconstructions_out_base_path = reconstructions_out_base_path,
     checkpoint_every_val_epochs = 1,
     learning_rate=4.5e-6,
-    caption_key="caption",
+    caption_key=1,
     embedding_provider=emb_prov
 ).to(device)
 
 # Create the trainer
 trainer = pl.Trainer(
     limit_train_batches=200, 
-    check_val_every_n_epoch=100, 
+    check_val_every_n_epoch=200, 
     limit_val_batches=5, 
     num_sanity_val_steps=0, 
     max_epochs=20000, 

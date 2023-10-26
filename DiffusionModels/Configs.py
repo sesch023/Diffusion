@@ -10,9 +10,9 @@ class ModelLoadConfig:
     # Path to the Diffusion model
     diffusion_path = "/home/archive/schmidt_models/diffusion_model.ckpt"
     # Pato the the CIFAR-10 Diffusion model
-    cf10_diffusion_path = "/home/archive/schmidt_models/cf10_diffusion_model.ckpt"
+    cf10_diffusion_path = "/home/archive/schmidt_models/cf10_diff_model.ckpt"
     # Path to the Spatio-Temporal Diffusion model
-    spatio_temporal_path = "/home/archive/schmidt_models/spatio_temporal_diff_model.ckpt"
+    spatio_temporal_diffusion_path = "/home/archive/schmidt_models/spatio_temporal_diff_model.ckpt"
 
 class DatasetLoadConfig:
     # Path to the CIFAR-10 dataset
@@ -23,9 +23,13 @@ class DatasetLoadConfig:
     coco_val_path = ["/home/archive/CocoWebdatasetFullScale/mscoco/{00000..00040}.tar"]
     coco_test_path = ["/home/archive/CocoWebdatasetFullScale/mscoco/{00041..00059}.tar"]
     # Path to the Webvid-10M dataset csv file
-    webvid_10m_train_csv = "/home/shared-data/webvid/results_10M_train.csv"
+    # Normally this is supposed to be the 10M, but because of some last minute issues with the dataset, we used the 2M version here instead
+    # Once the new download is finished, this should be changed to the 10M version. If nothing goes wrong the Download should be done by the 10.11.
+    # The 10M can be found here after the download is finished: /home/archive/Webvid/webvid_10M/results_10M_train.csv"
+    # And for the data: /home/archive/Webvid/webvid_10M/data/videos
+    webvid_10m_train_csv = "/home/shared-data/webvid/results_2M_train.csv"
     # Path to the Webvid-10M dataset train video folder
-    webvid_10m_train_data = "/home/shared-data/webvid/data/videos"
+    webvid_10m_train_data = "/home/shared-data/webvid/data2M/videos"
     # Path to the validation csv file of the Webvid-10M dataset
     webvid_10m_val_csv = "/home/shared-data/webvid/results_10M_val.csv"
     # Path to the validation video folder of the Webvid-10M dataset

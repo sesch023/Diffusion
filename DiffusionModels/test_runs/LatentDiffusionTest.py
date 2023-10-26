@@ -19,10 +19,10 @@ The results of this model were described in the chapter:
 """
 gpus=[0]
 device = f"cuda:{str(gpus[0])}" if torch.cuda.is_available() else "cpu"
-report_path = "LatentDiffusion_report_2/"
+report_path = "LatentDiffusion_report/"
 batch_size = 4
 start_n = 0
-n = 8
+n = 1000
 
 if not os.path.exists(report_path):
     os.makedirs(report_path)

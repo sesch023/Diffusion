@@ -9,6 +9,7 @@ from einops import rearrange
 from DiffusionModules.DataModules import VideoDatasetDataModule, WebdatasetDataModule
 from DiffusionModules.ModelLoading import load_spatio_temporal
 from Configs import ModelLoadConfig, DatasetLoadConfig, RunConfig
+from DiffusionModules.Util import calculate_mean
 
 """
 Tests for a spatio-temporal diffusion model.
@@ -21,7 +22,7 @@ device = f"cuda:{str(gpus[0])}" if torch.cuda.is_available() else "cpu"
 start_n = 0
 n = 200
 batch_size = 2
-report_path = "SpatioTemporalDiffusion_report_2/"
+report_path = "SpatioTemporalDiffusion_report/"
 
 if not os.path.exists(report_path):
     os.makedirs(report_path)

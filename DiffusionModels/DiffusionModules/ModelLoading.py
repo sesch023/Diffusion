@@ -1,10 +1,10 @@
 from DiffusionModules.DiffusionModels import BasicUNet, UNet, UpscalerUNet, SpatioTemporalUNet
 from DiffusionModules.DataModules import WebdatasetDataModule, CIFAR10DataModule, VideoDatasetDataModule
 from torchinfo import summary
-from Configs import ModelLoadConfig
+from Configs import ModelLoadConfig, DatasetLoadConfig
 
+# We dont need data for loading the model, but we need to initialize the DataModule for transforming the data
 wds_path = ""
-
 
 def load_udm(path, device, upscale_size=256):
     """
@@ -123,7 +123,7 @@ def load_cf10(path, device):
     """    
     batch_size = 1
     dm = CIFAR10DataModule(
-        cifar_path=ModelLoadConfig.cifar_10_64_path,
+        cifar_path=DatasetLoadConfig.cifar_10_64_path,
         batch_size=batch_size,
         num_workers=1
     )

@@ -162,7 +162,9 @@ class DiffusionTrainer(pl.LightningModule):
                 self.up_model_pipeline.eval()
                 self.upscaler = lambda image, caption: self.up_model_pipeline([image], [caption], ema=True)[0]
                 self.save_images = lambda image, path: image.save(path)
-        
+        else:
+            self.save_images = lambda image, path: image.save(path)
+
         # Create EMA model if ema_beta is not None
         if ema_beta is not None:   
             self.ema = ExponentialMovingAverage(ema_beta)

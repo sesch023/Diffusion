@@ -21,8 +21,8 @@ The results of this model were described in the chapter:
 gpus=[0]
 device = f"cuda:{str(gpus[0])}" if torch.cuda.is_available() else "cpu"
 
-report_path = "CosDiffusion_report_2/"
-path = ModelLoadConfig.cos_diffusion_path
+report_path = "CosDiffusion_report/"
+path = ModelLoadConfig.diffusion_path
 batch_size = 4
 start_n = 0
 n = 1000

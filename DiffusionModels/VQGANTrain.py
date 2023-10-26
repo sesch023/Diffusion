@@ -18,7 +18,7 @@ This was not used for the experiments in the thesis and is considered legacy for
 """
 gpus=[0]
 device = f"cuda:{str(gpus[0])}" if torch.cuda.is_available() else "cpu"
-batch_size = 16
+batch_size = 4
 num_workers = 4
 captions_preprocess = lambda captions: [cap[:77] for cap in captions]
 reconstructions_out_base_path = "reconstructions/"
@@ -29,9 +29,11 @@ data = WebdatasetDataModule(
     DatasetLoadConfig.coco_val_path,
     DatasetLoadConfig.coco_test_path,
     batch_size=batch_size,
-    collate_type=CollateType.COLLATE_NONE_DICT,
+    collate_type=CollateType.COLLATE_NONE_TUPLE,
     num_workers=num_workers,
-    img_in_target_size=256
+    img_in_target_size=256,
+    preprocess=None,
+    legacy=False
 )  
 
 if not os.path.exists(reconstructions_out_base_path):
@@ -112,7 +114,7 @@ model = VQModel(
     n_codebook_embeddings=8192,
     codebook_embedding_size=z_channels,
     z_channels=z_channels,
-    image_key="data",
+    image_key=0,
     monitor="val/rec_loss",
     remap=None,
     sane_index_shape=False,  # tell vector quantizer to return indices as bhw
@@ -124,7 +126,7 @@ model = VQModel(
 # Initializes the trainer
 trainer = pl.Trainer(
     limit_train_batches=200, 
-    check_val_every_n_epoch=10, 
+    check_val_every_n_epoch=200, 
     limit_val_batches=5, 
     num_sanity_val_steps=0, 
     max_epochs=10000, 

@@ -91,7 +91,7 @@ lr_monitor = cb.LearningRateMonitor(logging_interval='epoch')
 
 # Create the trainer
 trainer = pl.Trainer(
-    limit_train_batches=100, 
+    limit_train_batches=200, 
     check_val_every_n_epoch=200, 
     limit_val_batches=5, 
     num_sanity_val_steps=0, 

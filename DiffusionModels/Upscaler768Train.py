@@ -9,7 +9,7 @@ import glob
 
 from DiffusionModules.Diffusion import DiffusionTools, LinearScheduler
 from DiffusionModules.DiffusionTrainer import UpscalerDiffusionTrainer
-from DiffusionModules.DiffusionModels import UpscalerUNet
+from DiffusionModules.DiffusionModels import UNet
 from DiffusionModules.DataModules import WebdatasetDataModule
 from DiffusionModules.EmbeddingTools import ClipTools, ClipEmbeddingProvider
 
@@ -18,6 +18,7 @@ This is the main file for training a upscaling diffusion
 model with a linear scheduler
 and a high output resolution of 768x768.
 This model was not reported in the thesis. 
+Because of the high resolution, the unet has additional down blocks.
 """
 
 gpus=[0]
@@ -26,7 +27,7 @@ batch_size = 2
 sample_images_out_base_path="samples_upscale_768/"
 captions_preprocess = lambda captions: [cap[:77] for cap in captions]
 # Should the training resume from the latest checkpoint in the sample_images_out_base_path?
-resume_from_checkpoint = True
+resume_from_checkpoint = False
 
 # Initialize the high res data module
 data = WebdatasetDataModule(
@@ -51,7 +52,16 @@ wandb_logger = WandbLogger()
 wandb.save("*.py*")
 
 # Initialize the UNet model
-unet = UpscalerUNet(device=device).to(device)
+unet = UNet(
+    out_channels=6,
+    device=device,
+    in_channels=6,
+    res_blocks_per_resolution=2,
+    mha_head_channels=(64, 64, 64),
+    base_channels=192, 
+    base_channel_mults=(1, 1, 2, 2, 3, 3, 4),
+    attention_at_downsample_factor=(16, 32, 64)
+).to(device)
 summary(unet, [(1, 6, 768, 768), (1, 256), (1, 512)], verbose=1)
 
 # Find the latest checkpoint in the sample_images_out_base_path

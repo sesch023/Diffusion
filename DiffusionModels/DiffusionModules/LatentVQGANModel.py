@@ -49,14 +49,14 @@ class VQModel(pl.LightningModule):
         n_codebook_embeddings,
         codebook_embedding_size,
         z_channels=256,
-        image_key="data",
+        image_key=0,
         monitor=None,
         remap=None,
         sane_index_shape=False,  
         reconstructions_out_base_path = "reconstructions/",
         checkpoint_every_val_epochs = 1,
         learning_rate=4.5e-6,
-        caption_key="caption",
+        caption_key=1,
         embedding_provider=None
     ):
         """
@@ -69,12 +69,12 @@ class VQModel(pl.LightningModule):
         :param n_codebook_embeddings: Number of codebook embeddings.
         :param codebook_embedding_size: Size of the codebook embeddings. 
         :param z_channels: 
-        :param image_key: Key for the image in the batch, defaults to "data"
+        :param image_key: Key for the image in the batch, defaults to 0
         :param monitor: Which value to monitor, defaults to None
         :param reconstructions_out_base_path: Base path for the reconstructions, defaults to "reconstructions/"
         :param checkpoint_every_val_epochs: Create a checkpoint every x validation epochs if the validation loss is lower than the previous checkpoint, defaults to 1
         :param learning_rate: Learning rate for the model, defaults to 4.5e-6
-        :param caption_key: Key for the caption in the batch, defaults to "caption"
+        :param caption_key: Key for the caption in the batch, defaults to 1
         :param embedding_provider: Embedding provider for the model, defaults to None
         """    
         super().__init__()

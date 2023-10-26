@@ -35,10 +35,9 @@ class CollateTypeFunction():
         :param collations: OrderedDictionary for describing the collations with a key as a tuple index and string as target dict key, 
                            defaults to OrderedDict(((0, "data"), (1, "caption")))
         :return: Dict of data defined by the collations.
-        """        
+        """       
         if collations is None:
             collations = CollateTypeFunction.standard_collations
-
         def filter_none(item, collations):
             valid = True
             for key in collations.keys():
@@ -360,7 +359,19 @@ class WebdatasetDataModule(TransformableImageDataModule):
         label = json["caption"]
         return image, label
 
-    def __init__(self, train_paths, val_paths, test_paths=None, collate_type=CollateType.COLLATE_NONE_TUPLE, collate_fn=None, batch_size=16, num_workers=4, img_in_target_size=64):
+    def __init__(
+        self, 
+        train_paths, 
+        val_paths, 
+        test_paths=None, 
+        collate_type=CollateType.COLLATE_NONE_TUPLE, 
+        collate_fn=None, 
+        batch_size=16, 
+        num_workers=4, 
+        img_in_target_size=64,
+        preprocess=None,
+        legacy=False
+    ):
         """
         Creates a WebdatasetDataModule that loads the dataset from the given paths. The dataset is defined by a list of paths
         for the training, validation, and test set. The dataset is loaded using the Webdataset library. The target size of the
@@ -374,6 +385,10 @@ class WebdatasetDataModule(TransformableImageDataModule):
         :param batch_size: batch_size of the dataloaders, defaults to 16
         :param num_workers: Number of workers for the dataloaders, defaults to 4
         :param img_in_target_size: Target size of the images, defaults to 64
+        :param preprocess: If this is None the standard_preprocess function is used, else the given function is used.
+                           This parameter was added for legacy reasons, defaults to False
+        :param legacy: If this is True the legacy pipeline is used, else the new pipeline is used.
+                       This parameter was added for legacy reasons, defaults to False
         """        
         super(WebdatasetDataModule, self).__init__(collate_type, collate_fn, img_in_target_size)
         self.batch_size = batch_size
@@ -387,6 +402,10 @@ class WebdatasetDataModule(TransformableImageDataModule):
         self.num_workers = num_workers
         self.img_in_target_size = img_in_target_size
         self.transform = ImageTransformer(img_target_size=self.img_in_target_size)
+        self.preprocess = preprocess
+        if self.preprocess is None:
+            self.preprocess = WebdatasetDataModule.standard_preprocess
+        self.legacy = legacy
 
     def braceexpand_paths(self, paths):
         """
@@ -405,12 +424,16 @@ class WebdatasetDataModule(TransformableImageDataModule):
         Returns a dataloader for the training data.
 
         :return: Dataloader for the training data.
-        """        
+        """     
+        if self.legacy:
+            ds = wds.WebDataset(self.train_paths, shardshuffle=True).shuffle(1000).decode("pil").to_tuple("jpg", "json").map(self.preprocess)
+            return wds.WebLoader(ds, num_workers=self.num_workers, batch_size=self.batch_size, collate_fn=self.collate)
+
         ds = (wds.WebDataset(self.train_paths, shardshuffle=True)
             .shuffle(1000)
             .decode("pil")
             .to_tuple("jpg", "json")
-            .map(WebdatasetDataModule.standard_preprocess)
+            .map(self.preprocess)
             .batched(self.batch_size))
         return (wds.WebLoader(ds, num_workers=self.num_workers, batch_size=None, collate_fn=self.collate)
             .unbatched()
@@ -422,11 +445,15 @@ class WebdatasetDataModule(TransformableImageDataModule):
         Returns a dataloader for the validation data.
 
         :return: Dataloader for the validation data.
-        """        
+        """  
+        if self.legacy:
+            ds = wds.WebDataset(self.val_paths, shardshuffle=True).shuffle(1000).decode("pil").to_tuple("jpg", "json").map(self.preprocess)
+            return wds.WebLoader(ds, num_workers=self.num_workers, batch_size=self.batch_size, collate_fn=self.collate)
+
         ds = (wds.WebDataset(self.val_paths, shardshuffle=True)
             .shuffle(1000, initial=10000)
             .decode("pil").to_tuple("jpg", "json")
-            .map(WebdatasetDataModule.standard_preprocess)
+            .map(self.preprocess)
             .batched(self.batch_size))
         return (wds.WebLoader(ds, num_workers=self.num_workers, batch_size=None, collate_fn=self.collate)
             .unbatched()
@@ -443,10 +470,14 @@ class WebdatasetDataModule(TransformableImageDataModule):
             print("Warning: No test paths defined, returning a Validation Dataloader!")
             return self.val_dataloader()
         else:
+            if self.legacy:
+                ds = wds.WebDataset(self.test_paths, shardshuffle=True).shuffle(1000).decode("pil").to_tuple("jpg", "json").map(self.preprocess)
+                return wds.WebLoader(ds, num_workers=self.num_workers, batch_size=self.batch_size, collate_fn=self.collate)
+
             ds = (wds.WebDataset(self.test_paths, shardshuffle=True)
                 .shuffle(1000, initial=10000)
                 .decode("pil").to_tuple("jpg", "json")
-                .map(WebdatasetDataModule.standard_preprocess)
+                .map(self.preprocess)
                 .batched(self.batch_size))
             return (wds.WebLoader(ds, num_workers=self.num_workers, batch_size=None, collate_fn=self.collate)
                 .unbatched()

@@ -24,11 +24,11 @@ The results of this model were described in the chapter:
 gpus=[0]
 device = torch.device(f"cuda:{gpus[0]}" if torch.cuda.is_available() else "cpu")
 batch_size = 64
-model_out_base = "clip_translator_final"
+model_out_base = "clip_translator"
 model_out= f"{model_out_base}/latest.ckpt"
 model_out_final = f"{model_out_base}/final.ckpt"
 # Should the training resume from the latest checkpoint in the sample_images_out_base_path?
-resume_from_checkpoint = True
+resume_from_checkpoint = False
 
 # Initialize the data module
 data = WebdatasetDataModule(
@@ -63,7 +63,7 @@ resume_from_checkpoint = None if not resume_from_checkpoint else old_checkpoint[
 model = ClipTranslatorTrainer(translator, device=device, model_out=model_out)
 
 # About every element in the train dataset
-train_batches = (int((11e6 + 3e6) / batch_size) + 1) 
+train_batches = (int((11e6 + 3e6) / batch_size) + 1)
 # About every element in the validation dataset
 val_batches = int(320000 / batch_size) + 1
 
@@ -73,9 +73,9 @@ trainer = pl.Trainer(
     limit_train_batches=int(train_batches / 10), 
     limit_val_batches=int(val_batches / 10),
     limit_test_batches=1000,
-    check_val_every_n_epoch=10, 
+    check_val_every_n_epoch=1, 
     num_sanity_val_steps=0, 
-    max_epochs=8, 
+    max_epochs=20, 
     logger=wandb_logger, 
     callbacks=[EarlyStopping(monitor="val_loss", mode="min", patience=3), lr_monitor],
     devices=gpus,

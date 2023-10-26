@@ -31,9 +31,9 @@ num_workers = 2
 skip_spatio = True
 batch_size = 2
 captions_preprocess = lambda captions: [cap[:77] for cap in captions]
-sample_out_base_path="samples_spatio_temporal_test/"
+sample_out_base_path="samples_spatio_temporal/"
 # Should the training resume from the latest checkpoint in the sample_images_out_base_path?
-resume_from_checkpoint = True
+resume_from_checkpoint = False
 
 # Initialize the data module for the spatial model
 spatial_dataset = WebdatasetDataModule(

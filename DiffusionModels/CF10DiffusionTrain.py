@@ -9,7 +9,7 @@ from torchinfo import summary
 from lightning.pytorch.loggers import WandbLogger
 
 from DiffusionModules.Diffusion import LinearScheduler, DiffusionTools
-from DiffusionModules.DiffusionTrainer import DiffusionTrainer
+from DiffusionModules.DiffusionTrainer import DiffusionTrainer, UpscalerMode
 from DiffusionModules.DiffusionModels import BasicUNet
 from DiffusionModules.DataModules import CIFAR10DataModule
 from DiffusionModules.EmbeddingTools import CF10EmbeddingProvider
@@ -24,10 +24,10 @@ The results of this model were described in the chapter:
 gpus=[0]
 device = f"cuda:{str(gpus[0])}" if torch.cuda.is_available() else "cpu"
 batch_size = 4
-sample_images_out_base_path = "samples_cifar_final"
+sample_images_out_base_path = "samples_cifar"
 captions_preprocess = None
 # Should the training resume from the latest checkpoint in the sample_images_out_base_path? 
-resume_from_checkpoint = True
+resume_from_checkpoint = False
 
 # Initialize the data module
 cifar_data = CIFAR10DataModule(batch_size=batch_size)
@@ -66,7 +66,7 @@ model = DiffusionTrainer(
     captions_preprocess=captions_preprocess,
     sample_images_out_base_path=sample_images_out_base_path,
     checkpoint_every_val_epochs=1,
-    sample_upscaler_mode="UDM",
+    sample_upscaler_mode=UpscalerMode.NONE,
     c_device=device
 )
 
@@ -74,7 +74,7 @@ model = DiffusionTrainer(
 lr_monitor = cb.LearningRateMonitor(logging_interval='epoch')
 trainer = pl.Trainer(
     limit_train_batches=200, 
-    check_val_every_n_epoch=100, 
+    check_val_every_n_epoch=200, 
     limit_val_batches=2, 
     num_sanity_val_steps=0, 
     max_epochs=20000, 

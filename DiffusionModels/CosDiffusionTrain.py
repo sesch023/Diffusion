@@ -8,7 +8,7 @@ import wandb
 import glob
 
 from DiffusionModules.Diffusion import DiffusionTools, CosineScheduler
-from DiffusionModules.DiffusionTrainer import DiffusionTrainer
+from DiffusionModules.DiffusionTrainer import DiffusionTrainer, UpscalerMode
 from DiffusionModules.DiffusionModels import BasicUNet
 from DiffusionModules.DataModules import WebdatasetDataModule
 from DiffusionModules.EmbeddingTools import ClipTools, ClipEmbeddingProvider
@@ -27,7 +27,7 @@ batch_size = 4
 captions_preprocess = lambda captions: [cap[:77] for cap in captions]
 sample_images_out_base_path= "samples_cos_diffusion/"
 # Should the training resume from the latest checkpoint in the sample_images_out_base_path?
-resume_from_checkpoint = True
+resume_from_checkpoint = False
 
 # Initialize the data module
 data = WebdatasetDataModule(
@@ -73,7 +73,7 @@ model = DiffusionTrainer(
     checkpoint_every_val_epochs=1,
     embedding_provider=ClipEmbeddingProvider(clip_tools=clip_tools),
     alt_validation_emb_provider=ClipEmbeddingProvider(clip_tools=clip_tools),
-    sample_upscaler_mode="UDM",
+    sample_upscaler_mode=UpscalerMode.NONE,
     c_device=device
 )
 
@@ -81,7 +81,7 @@ model = DiffusionTrainer(
 lr_monitor = cb.LearningRateMonitor(logging_interval='epoch')
 trainer = pl.Trainer(
     limit_train_batches=200, 
-    check_val_every_n_epoch=100, 
+    check_val_every_n_epoch=200, 
     limit_val_batches=5, 
     num_sanity_val_steps=0, 
     max_epochs=20000, 
